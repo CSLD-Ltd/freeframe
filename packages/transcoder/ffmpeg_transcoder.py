@@ -15,12 +15,216 @@ from botocore.config import Config
 from .base import BaseTranscoder, TranscodeJob, TranscodeResult, VideoMetadata
 
 
+def _stream_start_seconds(stream: dict) -> float:
+    """Where a stream's first packet sits on the timeline, or 0.0."""
+    try:
+        return max(0.0, float(stream.get("start_time")))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# The demuxers whose per-stream `duration` is measured from the track and means
+# the track. ffprobe reports the family as one comma-joined string
+# ("mov,mp4,m4a,3gp,3g2,mj2"), so this is matched against the split parts.
+#
+# The list is short on purpose, and the reason is that elsewhere the number is
+# not a measurement at all but something the demuxer synthesises:
+#
+#   ASF/WMV      copies the file's play duration onto every stream, so a clip
+#                whose audio outlives its picture reports the audio for both
+#   AVI          derives it from `dwLength`, which counts the zero-size drop
+#                chunks a held last frame is stored as, and which is a
+#                placeholder when the file was written to a pipe
+#   MPEG-PS      reports the PTS span, which a clock jump between two spliced
+#                recordings inflates without a frame to show for it
+#
+# Each of those is a number that looks exactly like a duration and is not one.
+# Declining there is what `main` does, and being inert is the correct outcome
+# for a check that has nothing trustworthy to compare against.
+_MOV_FAMILY_FORMATS = frozenset({"mov", "mp4", "m4a", "3gp", "3g2", "mj2"})
+
+# Matroska and WebM publish no per-stream `duration` for an ordinary track, and
+# are handled through the `DURATION` tag below instead. Not "never": an
+# attachment-shaped cover image does carry one, and it holds the file's length
+# rather than the picture's -- which is what `_is_attached_pic` is for.
+_MATROSKA_FORMATS = frozenset({"matroska", "webm"})
+
+
+def _mapping(value) -> dict:
+    """`value` if it is a mapping, else an empty one.
+
+    ffprobe's JSON has the shapes below as objects, and a bare `or {}` would
+    still hand a list straight to `.get`. This function exists so that a probe
+    whose shape moves cannot raise `AttributeError` out of a metadata read: the
+    old code could not raise for these inputs, and neither should this.
+    """
+    return value if isinstance(value, dict) else {}
+
+
+def _format_names(data: dict) -> frozenset[str]:
+    """The demuxer names ffprobe reported, split out of its comma-joined list."""
+    raw = _mapping(data.get("format")).get("format_name") or ""
+    return frozenset(part.strip() for part in str(raw).split(",") if part.strip())
+
+
+def _format_end_seconds(data: dict) -> Optional[float]:
+    """The container's own duration, or None."""
+    try:
+        seconds = float(_mapping(data.get("format")).get("duration"))
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds > 0 and math.isfinite(seconds) else None
+
+
+def _is_attached_pic(stream: dict) -> bool:
+    """Whether this "video" stream is a still cover image rather than a track.
+
+    An audio file with artwork carries the picture as `v:0`, which is what an
+    `ffprobe -select_streams v:0` returns for it -- and the demuxer gives that
+    one frame the whole file's duration. mutagen writes the `udta` atom ahead of
+    `trak`, so the same thing happens to a real video whose artwork was embedded
+    afterwards by anything built on it (yt-dlp's embed-thumbnail, beets, Picard).
+    A cover has no timeline, so there is nothing here to compare a ladder
+    against.
+
+    ffprobe writes the flag as an integer, and `"0"` is read as the zero it
+    means rather than as a non-empty string: taking every disposition value as
+    true would make every file decline and switch the check off everywhere,
+    which is the kind of failure that looks like nothing happening.
+    """
+    flag = _mapping(stream.get("disposition")).get("attached_pic")
+    if isinstance(flag, str):
+        return flag.strip() not in ("", "0", "false", "False")
+    return bool(flag)
+
+
+def _tag_end_seconds(stream: dict) -> Optional[float]:
+    """Seconds from a Matroska `DURATION` stream tag, or None.
+
+    Matroska and WebM carry no per-stream `duration` field; the muxer writes the
+    track's extent as a tag instead, formatted `HH:MM:SS.nnnnnnnnn`.
+
+    It is an **end timestamp**, not a length: ffmpeg writes zero-to-last-packet,
+    so a track whose first frame sits at 3s reports 33s for 30s of picture.
+    Measured on a file built for it -- `start_time 3.023`, `DURATION
+    00:00:33.023`, 750 packets at 25fps. Hence the name, and hence the
+    subtraction wherever this is used as a length.
+
+    Only the exact key. A suffixed `DURATION-eng` is not the same claim: it is
+    what mkvmerge v45 and earlier wrote, it survives a `-c copy` cut into the new
+    file, and it then states the length of the file the cut came from. Reading
+    whichever `DURATION*` key came first would let a stale 120s win over a fresh
+    32s -- so a suffix is ignored rather than accepted, and a file that has only
+    a suffixed tag is simply not judged.
+    """
+    value = _mapping(stream.get("tags")).get("DURATION")
+    if value is None:
+        return None
+    parts = str(value).split(":")
+    if len(parts) != 3:
+        return None
+    try:
+        hours, minutes, seconds = (float(p) for p in parts)
+    except ValueError:
+        return None
+    total = hours * 3600 + minutes * 60 + seconds
+    # `inf` would pass `> 0` and then refuse every ladder at 0% while the file is
+    # perfectly good. `hls_output_seconds` guards its own arithmetic the same way
+    # and for the same reason; no muxer writes this, and the guard costs nothing.
+    if not math.isfinite(total):
+        return None
+    return total if total > 0 else None
+
+
+def _has_sample_table(stream: dict) -> bool:
+    """Whether the mov demuxer found this track's samples in `moov`.
+
+    ffprobe reports `nb_frames` from the sample table in `moov`, so the field is
+    absent for an fMP4 whose `moov` holds no samples and present on an ordinary
+    file. (A fragmented file written without `empty_moov` keeps its first
+    fragment's samples in `moov` and reports a partial count; it is read as
+    unfragmented, and ffmpeg starts those at zero, where the two readings agree.)
+    Measured with ffmpeg 7.1: `-movflags frag_keyframe+empty_moov` output and
+    joined HLS-fMP4 segments carry no `nb_frames`; plain, faststart and
+    `-itsoffset` files all carry their frame count.
+    """
+    try:
+        return int(stream.get("nb_frames")) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def video_track_seconds(data: dict, stream: dict) -> Optional[float]:
+    """How long the picture runs, but only where the file really says so.
+
+    None is the common answer and a legitimate one: it means nothing here can be
+    compared against a ladder, and a caller must then decline to judge rather
+    than reach for the next number that happens to be shaped like a duration.
+    That is the whole difficulty. Every container publishes something; only some
+    of them publish a measurement.
+    """
+    if _is_attached_pic(stream):
+        return None
+    formats = _format_names(data)
+    if formats & _MOV_FAMILY_FORMATS:
+        # A track length already, needing no offset correction: measured with
+        # `-itsoffset 3`, which gives start_time 3.000 alongside duration 30.000.
+        try:
+            seconds = float(stream.get("duration"))
+        except (TypeError, ValueError):
+            return None
+        if not _has_sample_table(stream):
+            # Except in a fragmented file, where it is an end timestamp. The
+            # samples live in the fragments rather than in `moov`, and the
+            # demuxer takes the duration from the end of the last fragment
+            # without subtracting the first `tfdt`. Measured on an fMP4 init
+            # segment joined to media segments 6-15 of a 60s stream (a live
+            # window, a partial download): start_time 20.066, duration 60.000,
+            # 1200 frames at 30fps, which is 40s of picture. Read as a length,
+            # that refuses a complete ladder at 67% on every attempt but the last. A
+            # fragmented file that starts at zero is unaffected either way.
+            seconds -= _stream_start_seconds(stream)
+        return seconds if seconds > 0 and math.isfinite(seconds) else None
+    if formats & _MATROSKA_FORMATS:
+        tag_end = _tag_end_seconds(stream)
+        if tag_end is None:
+            return None
+        # Capped at the container's own duration, which a `DURATION` tag written
+        # for this file cannot exceed: the same muxer writes both, so a tag past
+        # the segment's own end did not come from these packets.
+        #
+        # A sanity bound and nothing cleverer. It does not rescue a file whose
+        # two numbers are stale together -- measured on the shape that suggests
+        # it, an mkv cut into a pipe: that one carries a stale `format.duration`
+        # and no `DURATION` tag at all, so it declines for want of a tag rather
+        # than being capped. What bounds the stale-both case is the last attempt
+        # giving way, which spends three encodes instead of the master.
+        format_end = _format_end_seconds(data)
+        if format_end is not None:
+            tag_end = min(tag_end, format_end)
+        seconds = tag_end - _stream_start_seconds(stream)
+        return seconds if seconds > 0 else None
+    return None
+
+
 def parse_probe_metadata(data: dict) -> Optional[VideoMetadata]:
     """Parse ffprobe JSON into the metadata persisted by v1.5.
 
     Returns None when no video stream exists.  A zero/invalid frame rate stays
     zero rather than inventing a value, and format-level duration is used when
     the video stream does not provide one.
+
+    `duration_seconds` is left exactly as it was -- the video stream's own
+    duration where the container publishes one, the format's otherwise -- since
+    it is what reaches the database and the comment timecodes, and changing it
+    is not this function's business.
+
+    `video_duration_seconds` is new, and is the picture track's length and
+    nothing else -- and only where the file genuinely states it, which is a
+    minority of containers. None everywhere else, which is a real answer rather
+    than a gap: the two numbers differ whenever another stream outlives the
+    video, and several demuxers synthesise the per-stream figure from the
+    container instead of measuring the track. See `video_track_seconds`.
     """
     streams = data.get("streams") or []
     if not streams:
@@ -43,6 +247,7 @@ def parse_probe_metadata(data: dict) -> Optional[VideoMetadata]:
         width=int(stream.get("width") or 0),
         height=int(stream.get("height") or 0),
         fps=fps,
+        video_duration_seconds=video_track_seconds(data, stream),
     )
 
 
@@ -707,6 +912,171 @@ def parse_progress_percent(line: str, duration_seconds: float | None) -> int | N
         return None
     percent = int(micros / 1_000_000 / duration_seconds * 100)
     return max(0, min(99, percent))
+
+
+class TranscodeTruncated(RuntimeError):
+    """ffmpeg reported success, and the ladder is shorter than the video track.
+
+    Its own type because this must not be absorbed by the fallbacks below. A
+    remux that fails for a reason of its own is worth encoding instead; a ladder
+    that came out short is worth *reading again*, which is what a task retry does
+    and a fallback does not -- a fallback would re-read the same bytes the same
+    way and charge hours for it.
+
+    Raised only while an attempt remains. On the last one the mismatch is logged
+    and the ladder kept, because reaching `failed` costs the master; see
+    `refuse_a_truncated_result`.
+
+    What does the passing-through is the `except TranscodeTruncated: raise`
+    placed ahead of `except RuntimeError` in the attempt loop, not the base
+    class. `RuntimeError` is kept only because every other failure the
+    transcoder raises is one, and nothing here should be the exception to that.
+    """
+
+
+# How far short of the source the output may fall before it counts as truncated
+# rather than rounded. The last segment is cut wherever the frames end, and a
+# copy's segment boundaries come from the source's GOP, so an exact match is not
+# on offer.
+#
+# A flat number rather than a share of the duration, because the drift it covers
+# is flat. Measured against the video track's own duration on 1-, 10- and
+# 40-minute sources, both paths:
+#
+#     copy    +0.0230s   at every length
+#     encode  -0.0400s   at every length
+#
+# It is a rounding remainder in the last segment, so it does not grow with the
+# file. A proportional term would grow anyway -- 24s of blindness on a
+# 40-minute master, 36s on an hour -- and buy nothing: 3s is already 75 times
+# the largest drift measured.
+_TRUNCATION_SLACK_SECONDS = 3.0
+
+def hls_output_seconds(hls_dir: Path) -> Optional[float]:
+    """How long the longest variant in a finished HLS directory actually is.
+
+    Read from the playlists, which are the only place the muxer records what it
+    wrote. Counting segments would not do: their length varies with the frame
+    rate, and on the copy path it follows the source's GOP rather than
+    `-hls_time`.
+
+    Returns None when there is no playlist at all. The caller deliberately does
+    not judge that -- see `refuse_a_truncated_result` -- because ffmpeg with an
+    HLS muxer either writes one or exits non-zero.
+    """
+    longest: Optional[float] = None
+    for playlist in sorted(hls_dir.glob("*/playlist.m3u8")):
+        try:
+            text = playlist.read_text(errors="replace")
+        except OSError:
+            # A path that matched the glob but cannot be read -- a directory of
+            # that name, a dangling symlink. Skipping it leaves the decision to
+            # the other variants, or to "no playlist at all", both of which are
+            # handled. Letting an OSError out here would escape the attempt
+            # loop's RuntimeError handler and burn the fallbacks.
+            continue
+        total = 0.0
+        for line in text.splitlines():
+            if not line.startswith("#EXTINF:"):
+                continue
+            try:
+                seconds = float(line.split(":", 1)[1].split(",")[0])
+            except ValueError:
+                continue  # a malformed line is not a reason to lose the rest
+            # `nan` fails every comparison, so a single one would make the whole
+            # check accept anything; `inf` does the same by swamping the sum.
+            if not math.isfinite(seconds):
+                continue
+            total += seconds
+        longest = total if longest is None else max(longest, total)
+    return longest
+
+
+def refuse_a_truncated_result(
+    hls_dir: Path,
+    source_video_seconds: Optional[float],
+    label: str = "ffmpeg",
+    *,
+    final_attempt: bool = False,
+) -> None:
+    """Raise unless the ladder just written is as long as the source's video.
+
+    The argument is the *video track's* duration, not the file's, and the name
+    says so because handing it the wrong one is silent and wrong rather than
+    loud: `#EXTINF` measures picture, a container's duration is its longest
+    stream, and a rough cut whose audio runs past its last frame would be
+    refused at 57% while being perfectly intact. `VideoMetadata` carries both
+    numbers separately for this reason, and most containers do not state the
+    video track's length at all -- for those this is handed None and declines.
+
+    ffmpeg's exit code does not answer this. If the input stops being readable
+    part-way through, the demuxer reaches what looks like the end of the file,
+    the muxer closes the playlist with `#EXT-X-ENDLIST`, and ffmpeg exits 0.
+    Measured on a 31:18 master cut at three successive frame boundaries: 92.4s,
+    96.1s and 99.8s of output, exit 0 every time, every playlist well-formed.
+    It is not confined to a clean boundary either: cut inside a video packet and
+    the encode pipeline decodes through the damage and still exits 0, and a
+    dropped HTTP read logs `Input/output error` before exiting 0. Only the copy
+    pipeline reports it, with exit 183 out of `h264_mp4toannexb` -- and there the
+    remux-to-encoder fallback absorbs it and stores the short ladder anyway.
+
+    A live instance carried such a version for two days. The database had
+    `ready` and the source's real duration side by side with 5% of it in the
+    bucket, and it took someone dragging the scrubber to the end to notice.
+
+    **On the last attempt this logs instead of raising**, which is `final_attempt`
+    and is the most important line in the function. A refusal is a mismatch
+    between two numbers, and a mismatch is not proof of a short read: it can also
+    be a duration this code trusted and should not have. The two outcomes are
+    not symmetric. Raising once costs a re-read, and a re-read is the cure for
+    the transient case. Raising every time costs the master: the version reaches
+    `failed`, and `_reap_stale_uploads` deletes the original of a `failed`
+    version a day later. The ladder can always be built again; the master
+    cannot. So this refuses while a retry remains and gives way when none does.
+    """
+    if not source_video_seconds or source_video_seconds <= 0:
+        # Nothing trustworthy to compare against, which is the normal case for
+        # most containers -- see `video_track_seconds`. Reaching for the
+        # container's duration instead is what would refuse intact files, so
+        # this declines to judge rather than judging on the wrong number.
+        return
+    written = hls_output_seconds(hls_dir)
+    if written is None:
+        # No playlist at all is not judged here. ffmpeg with an HLS muxer either
+        # writes one or exits non-zero, so in production this branch means the
+        # layout moved, not that a transcode failed -- and failing every asset
+        # over a renamed directory is the worse error. `test_the_check_is_wired
+        # _into_the_transcode` is what keeps this from being a quiet way for the
+        # whole check to stop applying.
+        return
+    if written >= source_video_seconds - _TRUNCATION_SLACK_SECONDS:
+        return
+    # Says what was measured and not why. With the last attempt accepting, a
+    # mismatch is no longer evidence of a cause -- it is two numbers that do not
+    # agree, and either of them can be the wrong one.
+    measured = (
+        f"{label} exited 0 with {written:.1f}s of ladder against a "
+        f"{source_video_seconds:.1f}s video track "
+        f"({written / source_video_seconds:.0%})"
+    )
+    if final_attempt:
+        try:
+            print(
+                f"[transcoder] {measured}; no attempt left, so this is being "
+                "stored as it is rather than failed",
+                flush=True,
+            )
+        except Exception:                                    # noqa: BLE001
+            # This branch exists so that a mismatch cannot cost the master, and
+            # a failing stdout must not be the one thing that undoes it. Under
+            # Celery's stdout redirection a broken pipe is swallowed already, but
+            # anywhere stdout is a real stream -- a manual run, another backend
+            # embedding this -- the exception would leave through both handlers
+            # in the attempt loop and fail the transcode on precisely the
+            # attempt that was added to keep it.
+            pass
+        return
+    raise TranscodeTruncated(f"{measured}; reading the source again")
 
 
 # Segments are uploaded by a small pool of threads rather than one after the
@@ -1566,6 +1936,12 @@ class FFmpegTranscoder(BaseTranscoder):
                 # Timeout scales with expected duration - 4 hours for very large files
                 return ffmpeg_cmd
 
+            # What the ladder will be held against. The video track's length,
+            # never the file's -- see refuse_a_truncated_result -- and None
+            # wherever the container does not state it, which leaves the check
+            # inert rather than guessing.
+            source_video_seconds = meta.video_duration_seconds
+
             # Try hardware first, then degrade to the software pipeline if the
             # device is unusable at runtime (most commonly another process on the
             # box has exhausted VRAM, so CUDA decode init fails with
@@ -1599,8 +1975,32 @@ class FFmpegTranscoder(BaseTranscoder):
                         )
                     else:
                         self._run(ffmpeg_cmd, timeout=14400, label="ffmpeg")
+                    # Exit 0 is not the same as "wrote the whole source" -- see
+                    # refuse_a_truncated_result. Checked before the backend is
+                    # accepted, so a short ladder is not uploaded while there is
+                    # still an attempt left to read the source again.
+                    refuse_a_truncated_result(
+                        hls_dir,
+                        source_video_seconds,
+                        label=f"ffmpeg ({attempt_backend})",
+                        final_attempt=job.final_attempt,
+                    )
                     backend = attempt_backend
                     break
+                except TranscodeTruncated:
+                    # Deliberately not absorbed by the fallbacks below. The
+                    # useful move is to read the source again: the task retries
+                    # in a minute, and the next read is a fresh connection to an
+                    # object the store has certainly finished assembling.
+                    # Degrading to the encoder would re-read the same bytes and,
+                    # for a source that really is short, cost hours to come out
+                    # short again. Not always identically: a remux drops the
+                    # packets ahead of the first keyframe and an encode does
+                    # not, so a source that opens on non-keyframes can be
+                    # refused here when the encoder would have matched. That
+                    # costs the remux retries, and the final attempt then
+                    # stores the remux's ladder.
+                    raise
                 except RuntimeError as exc:
                     is_last = attempt_index == len(attempts) - 1
                     remux = attempt_backend == "copy"

@@ -57,9 +57,20 @@ def process_asset(self, asset_id: str, version_id: str):
         output_prefix = f"processed/{asset.project_id}/{asset_id}/{version_id}"
         s3 = get_s3_client()
 
+        # Whether this read of the source is the last one there will be. The
+        # handler below reads this same flag to decide `failed` -- but that
+        # happens after the transcode has already returned, and the transcoder
+        # needs to know beforehand: a check that cannot be certain has to give
+        # way on the last attempt rather than spend the master. One flag for
+        # both is deliberate, so they cannot drift apart. See TranscodeJob.
+        final_attempt = self.request.retries >= self.max_retries
+
         try:
             if asset.asset_type in (AssetType.video,):
-                _process_video(db, asset, version, media_file, s3, output_prefix)
+                _process_video(
+                    db, asset, version, media_file, s3, output_prefix,
+                    final_attempt=final_attempt,
+                )
             elif asset.asset_type == AssetType.audio:
                 _process_audio(db, asset, version, media_file, s3, output_prefix)
             elif asset.asset_type in (AssetType.image, AssetType.image_carousel):
@@ -89,7 +100,7 @@ def process_asset(self, asset_id: str, version_id: str):
             # a minute apart) while its raw object sat there intact, so
             # /upload/complete's retry guard, the reaper and the client each got
             # a different answer depending on when they asked.
-            if self.request.retries >= self.max_retries:
+            if final_attempt:
                 _record_failure()
                 raise
 
@@ -112,7 +123,10 @@ def process_asset(self, asset_id: str, version_id: str):
         db.close()
 
 
-def _process_video(db, asset, version, media_file, s3, output_prefix):
+def _process_video(
+    db, asset, version, media_file, s3, output_prefix, *,
+    final_attempt: bool = False,
+):
     from packages.transcoder.ffmpeg_transcoder import FFmpegTranscoder, parse_qualities
     from packages.transcoder.base import TranscodeJob
 
@@ -146,6 +160,7 @@ def _process_video(db, asset, version, media_file, s3, output_prefix):
         output_s3_prefix=output_prefix,
         qualities=parse_qualities(settings.transcoder_qualities),
         progress_cb=_on_progress,
+        final_attempt=final_attempt,
     )
     result = _run_async(transcoder.transcode(job))
 
