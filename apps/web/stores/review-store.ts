@@ -3,7 +3,7 @@ import type { Asset, AssetVersion } from '@/types'
 import type { CueAnchor, RehearsalResponse } from '@/lib/rehearsal-timing'
 
 type DrawingTool = 'pen' | 'rectangle' | 'arrow' | 'line'
-export type TimeFormat = 'standard' | 'timecode' | 'frames'
+export type TimeFormat = 'standard' | 'timecode' | 'clip-timecode' | 'frames'
 
 interface ReviewState {
   rehearsalTimeline: {asset_id:string;version_id:string;response:RehearsalResponse} | null

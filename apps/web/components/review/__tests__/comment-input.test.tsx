@@ -224,3 +224,19 @@ describe('CommentInput iOS auto-zoom guard', () => {
     expect(textarea.className).toContain('[@media(hover:hover)]:text-[13px]')
   })
 })
+
+// Display source labels while retaining clip-relative seconds at the API boundary.
+describe('rehearsal composer source clock',()=>{
+  it('matches the mapped source label without sending absolute source seconds',async()=>{
+    useReviewStore.setState({currentVersion:{id:'v1',asset_id:'a1'} as any,playheadTime:4.44,
+      rehearsalTimeline:{asset_id:'a1',version_id:'v1',response:{metadata_hash:'a'.repeat(64),timing_verified:false,metadata:{
+        frame_count:'300',video_rate:{numerator:'25',denominator:'1'},timecode_rate:{numerator:'25',denominator:'1'},
+        clock_spans:[{id:'run',clip_start:'104',clip_end:'176',source_start:'90102'}],cues:[],
+      }}}})
+    const onSubmit=vi.fn().mockResolvedValue(undefined)
+    render(<CommentInput assetId="a1" projectId="p1" assetType="video" onSubmit={onSubmit}/>)
+    expect(screen.getByText('01:00:04:09')).toBeInTheDocument()
+    await typeAndSubmit('source-clock review')
+    expect(onSubmit.mock.calls[0][1]).toBe(4.44)
+  })
+})

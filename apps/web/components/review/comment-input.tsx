@@ -24,7 +24,7 @@ import { useReviewStore } from "@/stores/review-store";
 import { useReview } from "./review-provider";
 import { useDrawing } from "@/hooks/use-drawing";
 import { api } from "@/lib/api";
-import { formatClipTime } from "@/lib/rehearsal-timing";
+import { formatClipTime, formatSourceTime } from "@/lib/rehearsal-timing";
 import { resolveSubmitTimecode } from "@/lib/resolve-submit-timecode";
 import type { User } from "@/types";
 
@@ -223,7 +223,9 @@ export function CommentInput({
     setActiveAnnotation,
   } = useReviewStore();
   const playheadTime = playheadTimeOverride ?? storePlayheadTime;
-  const rehearsalRate = playheadTimeOverride === undefined && rehearsalTimeline?.asset_id === assetId && rehearsalTimeline?.version_id === currentVersion?.id ? rehearsalTimeline.response.metadata.video_rate : null;
+  const rehearsalMetadata = playheadTimeOverride === undefined && rehearsalTimeline?.asset_id === assetId && rehearsalTimeline?.version_id === currentVersion?.id ? rehearsalTimeline.response.metadata : null;
+  const rehearsalRate = rehearsalMetadata?.video_rate ?? null;
+  const sourceClock = timeFormat === "timecode" && rehearsalMetadata !== null;
   const cueAnchor = !replyToId && playheadTimeOverride === undefined && pendingCueAnchor?.asset_id === assetId && pendingCueAnchor?.version_id === currentVersion?.id ? pendingCueAnchor : null;
 
   // Compare mode drives drawing per-pane. When `annotationActive` is provided it
@@ -290,6 +292,8 @@ export function CommentInput({
       case "standard":
         return formatTime(seconds);
       case "timecode":
+        return rehearsalMetadata ? formatSourceTime(seconds, rehearsalMetadata) : formatTimecode(seconds);
+      case "clip-timecode":
         return rehearsalRate ? formatClipTime(seconds, rehearsalRate) : formatTimecode(seconds);
       default:
         return rehearsalRate ? formatClipTime(seconds, rehearsalRate) : formatTimecode(seconds);
@@ -471,7 +475,9 @@ export function CommentInput({
             {/* Inline timecode badge — show when timecode attached (normal mode) or in drawing mode */}
             {hasTimecode && (timecodeAttached || drawingActive) && (
               <span className="shrink-0 ml-2.5 mt-[9px] rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-[11px] text-amber-400 leading-none select-none">
-                {displayTime(playheadTime)}
+                {sourceClock && <span className="mr-1.5">Source TC</span>}
+                {timeFormat === "clip-timecode" && <span className="mr-1.5">Clip TC</span>}
+                <span>{displayTime(playheadTime)}</span>
               </span>
             )}
             <textarea

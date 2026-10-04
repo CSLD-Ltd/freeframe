@@ -98,13 +98,15 @@ export function useVideoPlayer(
     armed.video.removeEventListener('canplay', armed.onCanPlay)
   }, [])
 
-  // Sync playhead to store at ~4fps to avoid excessive re-renders
+  // Sample once so the player, source strip and composer share a playhead.
   useEffect(() => {
     if (detached) return
     syncIntervalRef.current = setInterval(() => {
       const video = videoRef.current
       if (video && !video.paused) {
-        setPlayheadTime(video.currentTime)
+        const time = video.currentTime
+        setCurrentTime(time)
+        setPlayheadTime(time)
       }
     }, 250)
     return () => {

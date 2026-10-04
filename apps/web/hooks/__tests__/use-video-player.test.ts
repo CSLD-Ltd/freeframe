@@ -44,6 +44,7 @@ describe('useVideoPlayer — detached gates global-store writes', () => {
       attach(result.current.videoRef, { currentTime: 7, paused: false })
       act(() => { vi.advanceTimersByTime(300) }) // one ~250ms sync tick
       expect(useReviewStore.getState().playheadTime).toBe(7)
+      expect(result.current.currentTime).toBe(7) // same media sample as the transport/source strip
     } finally {
       vi.useRealTimers()
     }

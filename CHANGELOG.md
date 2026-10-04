@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Rehearsal playback, source strip and comment timestamps share mapped source timecode; elapsed clip timecode is explicitly labelled and unmapped clock gaps remain visible.
 - Preserve exact cue anchors in authenticated comments and replies, bound large cue navigation, and refuse non-video rehearsal publication targets before allocation.
 
 

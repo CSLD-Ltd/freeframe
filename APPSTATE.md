@@ -20,9 +20,14 @@ Upload/project review and ordinary share links retain existing behavior. ReaperS
 - Source declarations do not verify original media SHA or processed frame cadence. UI reports playback timing unverified; no processed-frame accuracy claim is established.
 - Schema 1 supports 24/25/30 non-drop source clocks; fractional/drop formats and physical latency measurements are deferred.
 - Existing share creation has no atomic idempotency key or permanent version pin. Native publisher reconciles equivalent links and refuses assets with additional versions.
-- Hosted cutover, actual native upload/storage/worker/guest acceptance and real production footage remain pending. Additive migrations were verified on an isolated database.
+- Historical checkpoint (superseded by the hosting acceptance below): hosted cutover, actual native upload/storage/worker/guest acceptance and real production footage were pending. Additive migrations were verified on an isolated database.
 
 ## Recent changes
+
+2026-10-04
+- The merged publishing integration is hosted at review.csld.co.uk. A generated 300-frame/25 fps native upload completed processing and guest review, repeated cue comments persisted, automatic share policy disabled downloads, and retry reused its existing publication. Real production footage and physical timing calibration remain pending. Private deployment/rollback records stay outside feature source.
+- Rehearsal transport and comment composer default to the same source clock as the source strip. The transport offers an explicitly labelled Clip timecode mode; mapped saved comments show source timecode while navigation and API timestamps remain clip-relative. Playback polling samples the media clock once for both local and shared state.
+- Source clock gaps show Unmapped. This display correction does not verify processed picture timing or physical LTC/MA latency; timing_verified remains false.
 
 2026-10-04
 - Prepared isolated source integration branch from upstream 1ecede3, preserving the dirty hosting checkout. Added strict immutable rehearsal metadata, duplicate-safe allocation and tombstones, exact comment anchors, guest metadata authorization and source/cue review UI.

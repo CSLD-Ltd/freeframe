@@ -15,7 +15,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { cn, formatTime, formatTimecode, formatFrames } from "@/lib/utils";
-import { formatClipTime } from "@/lib/rehearsal-timing";
+import { formatClipTime, formatSourceTime } from "@/lib/rehearsal-timing";
 import { renderedMediaBox } from "@/lib/media-frame";
 import { api } from "@/lib/api";
 import { useReviewStore, type TimeFormat } from "@/stores/review-store";
@@ -190,7 +190,9 @@ export function VideoPlayer({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [timeFormatOpen]);
 
-  const rehearsalRate = rehearsalTimeline?.asset_id === assetId && rehearsalTimeline?.version_id === currentVersion?.id ? rehearsalTimeline.response.metadata.video_rate : null;
+  const rehearsalMetadata = rehearsalTimeline?.asset_id === assetId && rehearsalTimeline?.version_id === currentVersion?.id ? rehearsalTimeline.response.metadata : null;
+  const rehearsalRate = rehearsalMetadata?.video_rate ?? null;
+  const sourceClock = timeFormat === "timecode" && rehearsalMetadata !== null;
   function displayTime(seconds: number): string {
     switch (timeFormat) {
       case "frames":
@@ -198,6 +200,8 @@ export function VideoPlayer({
       case "standard":
         return formatTime(seconds);
       case "timecode":
+        return rehearsalMetadata ? formatSourceTime(seconds, rehearsalMetadata) : formatTimecode(seconds);
+      case "clip-timecode":
         return rehearsalRate ? formatClipTime(seconds, rehearsalRate) : formatTimecode(seconds);
       default:
         return rehearsalRate ? formatClipTime(seconds, rehearsalRate) : formatTimecode(seconds);
@@ -296,13 +300,8 @@ export function VideoPlayer({
   }, [registerPauseHandler, pause]);
 
   // Sync video currentTime to review store so comment input shows same timecode
-  const lastSyncRef = useRef(0);
   useEffect(() => {
-    const now = Date.now();
-    if (now - lastSyncRef.current > 100) {
-      setPlayheadTime(currentTime);
-      lastSyncRef.current = now;
-    }
+    setPlayheadTime(currentTime);
   }, [currentTime, setPlayheadTime]);
 
   // Keyboard shortcuts
@@ -533,7 +532,9 @@ export function VideoPlayer({
             className="flex items-center gap-1.5 rounded-md bg-bg-tertiary px-3 py-1 hover:bg-bg-hover transition-colors"
           >
             <span className="font-mono text-sm text-text-primary tabular-nums tracking-wide">
-              {timeFormat === "timecode" ? (
+              {sourceClock && <span className="mr-2 text-[10px] text-text-tertiary">Source TC</span>}
+              {timeFormat === "clip-timecode" && <span className="mr-2 text-[10px] text-text-tertiary">Clip TC</span>}
+              {timeFormat === "timecode" || timeFormat === "clip-timecode" ? (
                 displayTime(currentTime)
               ) : (
                 <>
@@ -559,7 +560,8 @@ export function VideoPlayer({
                 [
                   { id: "frames" as TimeFormat, label: "Frames" },
                   { id: "standard" as TimeFormat, label: "Standard" },
-                  { id: "timecode" as TimeFormat, label: "Timecode" },
+                  { id: "timecode" as TimeFormat, label: rehearsalMetadata ? "Source timecode" : "Timecode" },
+                  ...(rehearsalMetadata ? [{ id: "clip-timecode" as TimeFormat, label: "Clip timecode" }] : []),
                 ] as const
               ).map((item) => (
                 <button

@@ -1,7 +1,7 @@
 "use client";
 import {memo,useEffect,useMemo,useState} from 'react';
 import {api,ApiError} from '@/lib/api';
-import {frameSeconds,formatSourceLabel,sourceLabel,type RehearsalResponse} from '@/lib/rehearsal-timing';
+import {frameSeconds,formatSourceLabel,sourceLabel,formatSourceTime,type RehearsalResponse} from '@/lib/rehearsal-timing';
 import {useReviewStore} from '@/stores/review-store';
 import {useReview} from './review-provider';
 import {useDrawing} from '@/hooks/use-drawing';
@@ -25,11 +25,10 @@ export function RehearsalTimeline({assetId,currentTime,canComment=true}:{assetId
  if(result.error)return <div className="px-4 py-2 text-xs text-text-secondary">{result.error} <button className="text-accent underline" onClick={()=>setRetry(n=>n+1)}>Retry</button></div>;
  if(!result.data)return null;
  const {metadata:m,metadata_hash:hash,timing_verified:verified}=result.data;
- const frame=Math.max(0,Math.floor(currentTime*Number(m.video_rate.numerator)/Number(m.video_rate.denominator)+1e-7)).toString();
- const label=sourceLabel(m,frame);
+
  return <section aria-label="Rehearsal source timeline" className="shrink-0 border-t border-border bg-bg-secondary px-4 py-2">
   <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
-   <span className="text-text-secondary">Source TC <span className="ml-2 font-mono tabular-nums text-text-primary">{label===null?'Unmapped':formatSourceLabel(label,m.timecode_rate)}</span></span>
+   <span className="text-text-secondary">Source TC <span className="ml-2 font-mono tabular-nums text-text-primary">{formatSourceTime(currentTime,m)}</span></span>
    <span className="text-text-tertiary">{verified?'Timing verified':'Playback timing unverified'}</span>
   </div>
   <CueLane key={key} response={result.data} assetId={assetId} versionId={versionId} canComment={canComment}/>

@@ -29,7 +29,7 @@ import {
   Download,
 } from "lucide-react";
 import { cn, formatTime, formatRelativeTime } from "@/lib/utils";
-import { frameSeconds } from "@/lib/rehearsal-timing";
+import { frameSeconds, formatSourceTime, formatSourceLabel, sourceLabel } from "@/lib/rehearsal-timing";
 import { useReviewStore } from "@/stores/review-store";
 import type { Asset } from "@/types";
 import type { CommentWithReplies } from "@/hooks/use-comments";
@@ -414,6 +414,13 @@ function CommentItem({
 }: CommentItemProps) {
   const storeSeekTo = useReviewStore((s) => s.seekTo);
   const rehearsalTimeline = useReviewStore((s) => s.rehearsalTimeline);
+  const metadata = rehearsalTimeline?.asset_id === comment.asset_id && rehearsalTimeline?.version_id === comment.version_id && (!comment.rehearsal_metadata_hash || rehearsalTimeline.response.metadata_hash === comment.rehearsal_metadata_hash)
+    ? rehearsalTimeline.response.metadata : null;
+  const exactFrame = metadata && comment.rehearsal_metadata_hash && comment.clip_frame ? comment.clip_frame : null;
+  const sourceFrame = metadata && exactFrame ? sourceLabel(metadata, exactFrame) : null;
+  const clockLabel = metadata && comment.timecode_start !== null && comment.timecode_start !== undefined
+    ? `Source TC ${exactFrame ? (sourceFrame === null ? 'Unmapped' : formatSourceLabel(sourceFrame, metadata.timecode_rate)) : formatSourceTime(comment.timecode_start, metadata)}`
+    : null;
   const cue = rehearsalTimeline?.asset_id === comment.asset_id && rehearsalTimeline?.version_id === comment.version_id && rehearsalTimeline?.response.metadata_hash === comment.rehearsal_metadata_hash
     ? rehearsalTimeline.response.metadata.cues.find(c => c.id === comment.cue_occurrence_id) : undefined;
 
@@ -547,7 +554,7 @@ function CommentItem({
                 <button
                   className="inline-flex items-center gap-1 rounded-md bg-accent/15 px-1.5 py-0.5 text-[11px] font-mono text-accent hover:bg-accent/25 transition-colors"
                   onClick={() => {
-                    seekTo(cue && comment.clip_frame && rehearsalTimeline ? frameSeconds(comment.clip_frame, rehearsalTimeline.response.metadata.video_rate) : comment.timecode_start!, true);
+                    seekTo(exactFrame && metadata ? frameSeconds(exactFrame, metadata.video_rate) : comment.timecode_start!, true);
                     setFocusedCommentId(comment.id);
                     if (comment.annotation) {
                       showAnnotation(comment.annotation.drawing_data);
@@ -556,10 +563,11 @@ function CommentItem({
                   title="Jump to timecode"
                 >
                   <Clock className="h-2.5 w-2.5" />
-                  {cue ? `Seq ${cue.sequence} · Cue ${cue.cue} · f${comment.clip_frame}` : formatTime(comment.timecode_start)}
+                  {cue && <span>{`Seq ${cue.sequence} · Cue ${cue.cue} · f${comment.clip_frame}`}</span>}
+                  <span>{clockLabel ?? (cue ? null : formatTime(comment.timecode_start))}</span>
                   {comment.timecode_end !== null &&
                     comment.timecode_end !== undefined && (
-                      <> — {formatTime(comment.timecode_end)}</>
+                      <> — {metadata ? formatSourceTime(comment.timecode_end, metadata) : formatTime(comment.timecode_end)}</>
                     )}
                 </button>
               )}
