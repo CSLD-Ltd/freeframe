@@ -375,6 +375,7 @@ def create_comment(
     # inside a thread on an asset the author cannot open. The weaker failure is
     # the same bug pointed at a deleted parent: a 201 for a reply no read path
     # will ever return.
+    comment_version_id = body.version_id
     if body.parent_id is not None:
         parent = db.query(Comment).filter(
             Comment.id == body.parent_id,
@@ -383,11 +384,12 @@ def create_comment(
         ).first()
         if not parent:
             raise HTTPException(status_code=400, detail="parent_id does not belong to this asset")
+        comment_version_id = parent.version_id
 
-    anchor_fields = validate_anchor(db, body, body.version_id)
+    anchor_fields = validate_anchor(db, body, comment_version_id)
     comment = Comment(
         asset_id=asset_id,
-        version_id=body.version_id,
+        version_id=comment_version_id,
         parent_id=body.parent_id,
         author_id=current_user.id,
         timecode_start=anchor_fields.pop("timecode_start", body.timecode_start),
@@ -457,13 +459,15 @@ def reply_to_comment(
     # a reviewer cannot reproduce by retyping. `version_id` is still forced to
     # the parent's, since a reply belongs to the same version as what it
     # answers.
+    anchor_fields = validate_anchor(db, body, parent.version_id)
     reply = Comment(
+        **anchor_fields,
         asset_id=asset_id,
         version_id=parent.version_id,
         parent_id=comment_id,
         author_id=current_user.id,
         body=body.body,
-        timecode_start=body.timecode_start,
+        **({"timecode_start": body.timecode_start} if not anchor_fields else {}),
         timecode_end=body.timecode_end,
         visibility=body.visibility or "public",
     )

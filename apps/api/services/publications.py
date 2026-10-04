@@ -5,6 +5,7 @@ import uuid
 from fastapi import HTTPException
 from sqlalchemy import text
 from ..models.publication import PublicationAllocation
+from ..models.asset import Asset, AssetType
 from ..routers.upload import allocate_upload
 
 
@@ -26,6 +27,14 @@ def allocate(db, user, body):
         if row.version_id is None:
             raise HTTPException(status_code=410, detail="Publication has been purged")
         return row.receipt
+    # Replay/tombstones win before target validation; only fresh uploads allocate storage.
+    if body.asset_id is not None:
+        target = db.query(Asset).filter(Asset.id == body.asset_id,
+            Asset.project_id == body.project_id, Asset.deleted_at.is_(None)).first()
+        if target is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        if target.asset_type != AssetType.video:
+            raise HTTPException(status_code=422, detail="Rehearsal publication requires a video asset")
     receipt = allocate_upload(body, db, user).model_dump(mode="json")
     db.add(PublicationAllocation(identity_hash=identity_hash, request_hash=request_hash,
         version_id=uuid.UUID(receipt["version_id"]), receipt=receipt))

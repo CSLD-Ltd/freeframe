@@ -40,3 +40,17 @@ it('preserves a pending drawing and its frame when cue selection is attempted be
  const input=screen.getByPlaceholderText('Leave your comment...');fireEvent.change(input,{target:{value:'Existing drawing'}});fireEvent.keyDown(input,{key:'Enter'})
  await waitFor(()=>expect(saved).toHaveBeenCalledTimes(1));expect(saved.mock.calls[0][1]).toBe(.4);expect(saved.mock.calls[0][3]).toEqual(drawing)
 })
+
+it('bounds large cue rendering while allowing navigation through every page',async()=>{
+ const cues=Array.from({length:1000},(_,i)=>({...data.metadata.cues[0],id:`cue-${i}`,clip_frame:String(i),cue:String(i)}))
+ vi.mocked(api.get).mockResolvedValue({...data,metadata:{...data.metadata,frame_count:'20000',clock_spans:[{...data.metadata.clock_spans[0],clip_end:'20000'}],cues}})
+ const {rerender}=render(<RehearsalTimeline assetId="a1" currentTime={0}/>);
+ await screen.findByText('Seq 1 · Cue 0')
+ expect(screen.getAllByRole('button',{name:/Seq 1 · Cue/}).length).toBeLessThanOrEqual(100)
+ fireEvent.click(screen.getByRole('button',{name:'Next cues'}))
+ const secondPage=screen.getAllByRole('button',{name:/Seq 1 · Cue/});fireEvent.click(secondPage[0])
+ expect(useReviewStore.getState().pendingCueAnchor?.cue_occurrence_id).toBe('cue-100')
+ rerender(<RehearsalTimeline assetId="a1" currentTime={1}/>);
+ expect(screen.getAllByRole('button',{name:/Seq 1 · Cue/}).length).toBeLessThanOrEqual(100)
+ expect(screen.getByRole('button',{name:/Seq 1 · Cue 100/})).toBeTruthy()
+})

@@ -2,6 +2,7 @@
 
 import useSWR from 'swr'
 import { api } from '@/lib/api'
+import {prepareCueComment,clearSubmittedCue} from '@/lib/rehearsal-comment'
 import type { Comment, Annotation, CommentReaction } from '@/types'
 
 // ─── Extended comment type with nested data ───────────────────────────────────
@@ -101,7 +102,9 @@ export function useComments(assetId: string | null, versionId: string | null) {
       ? `/assets/${assetId}/comments/${parentId}/replies`
       : `/assets/${assetId}/comments`
 
-    const newComment = await api.post<CommentWithReplies>(endpoint, payload)
+    const prepared = prepareCueComment(payload, assetId, versionId)
+    const newComment = await api.post<CommentWithReplies>(endpoint, prepared.payload)
+    clearSubmittedCue(prepared.anchor)
     // Optimistically insert the authoritative POST response into the cache, then
     // revalidate in the BACKGROUND (not awaited) — the composer clears after the
     // single POST round-trip instead of also waiting on a full re-fetch of every

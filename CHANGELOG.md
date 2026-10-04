@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Preserve exact cue anchors in authenticated comments and replies, bound large cue navigation, and refuse non-video rehearsal publication targets before allocation.
+
+
 ### Added
 - ReaperShow publication allocation with duplicate-safe retries, immutable source-clock/cue metadata, exact frame/cue comment anchors and source timecode/cue navigation. Processed playback timing remains unverified.
 

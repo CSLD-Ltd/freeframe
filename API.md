@@ -68,7 +68,9 @@ Response: `{metadata_hash, metadata, timing_verified: false}`. Source declaratio
 do not certify processed HLS timing. Same canonical content repeats safely; changed
 content returns 409 and requires a new version. Missing assets/versions/metadata
 return 404, insufficient permissions 403, invalid schema 422 and payload over 8 MiB
-413. No guest endpoint is exposed yet.
+413. Authorized guests can read a filtered projection through
+`GET /share/{token}/assets/{asset_id}/versions/{version_id}/rehearsal-metadata`,
+subject to the existing share/session and version-visibility checks described below.
 
 Manifest fields: format, schema_version, export_id, video_sha256, frame_count,
 video_rate/timecode_rate `{numerator,denominator}`, drop_frame=false, clock_spans
@@ -85,7 +87,9 @@ including local filesystem paths, are rejected.
 to a live project. Supply the existing upload initiation fields and UUID
 `producer_id`, opaque `recording_id`, `take_id`, `export_id` (1–128 ASCII
 letters/digits/underscore/dot/colon/hyphen), and lowercase SHA-256
-`export_sha256`. Only MP4 is accepted; `original_filename` must be a basename.
+`export_sha256`. Only MP4 is accepted; `original_filename` must be a basename. An optional
+existing target must be a live video asset in the same project; non-video targets
+are rejected with 422 before multipart allocation. Asset names contain 1–255 characters.
 The response is the existing multipart allocation receipt. Continue through
 `/upload/presign-part`, `/upload/resume`, and `/upload/complete`.
 
@@ -107,7 +111,9 @@ The server validates them against the target version's immutable timeline; cue
 anchors must match an occurrence at that exact frame. Missing/stale metadata is
 409, invalid frame/cue is 422. The server derives legacy `timecode_start` seconds
 from the authoritative frame and rational video rate. Integers are stored as
-BIGINT and returned as decimal strings. Ordinary comments are unchanged.
+BIGINT and returned as decimal strings. Authenticated replies validate and persist
+anchors against the parent comment’s version, regardless of the supplied version ID.
+Ordinary comments are unchanged.
 
 `GET /share/{token}/assets/{asset_id}/versions/{version_id}/rehearsal-metadata`
 uses the existing password/session, expiration, visibility and asset-scope checks.

@@ -20,7 +20,7 @@ Upload/project review and ordinary share links retain existing behavior. ReaperS
 - Source declarations do not verify original media SHA or processed frame cadence. UI reports playback timing unverified; no processed-frame accuracy claim is established.
 - Schema 1 supports 24/25/30 non-drop source clocks; fractional/drop formats and physical latency measurements are deferred.
 - Existing share creation has no atomic idempotency key or permanent version pin. Native publisher reconciles equivalent links and refuses assets with additional versions.
-- Hosted cutover, actual native upload/storage/worker/guest acceptance and real production footage remain pending. Database backup/restore and additive migrations were verified on an isolated restored copy; see docs/rehearsal-cutover.md.
+- Hosted cutover, actual native upload/storage/worker/guest acceptance and real production footage remain pending. Additive migrations were verified on an isolated database.
 
 ## Recent changes
 
@@ -41,4 +41,14 @@ Use a dedicated test database for real_db tests and run test migrations there; n
 2026-10-04 verification checkpoint
 - Isolated integration API: 798 passed, 3 skipped. Final web: 662 passed; TypeScript and production Next.js build passed with one build worker and 512 MiB JavaScript heap. No type checking was bypassed.
 - Prevented cue selection from moving a pending drawing or silently stripping its cue anchor. Drawing/cue composition regression passes.
-- Live backup restored successfully and all three migrations passed on the restored copy with existing user/project/asset/version/comment counts preserved. Hosted services and live migration head remain unchanged. See docs/rehearsal-cutover.md for cutover and rollback boundaries.
+- Additive integration migrations passed isolated verification. Environment-specific deployment and backup records are maintained privately, outside this feature change.
+
+2026-10-04 PR review corrections
+- Project and share composers now share exact cue-anchor injection and clear only the successfully submitted anchor; drawings and replies cannot silently consume it. Both authenticated reply entry points validate and persist anchors on the parent version.
+- Cue navigation pages at most 100 occurrences and memoizes the cue lane, keeping every accepted occurrence reachable without rebuilding the full list on playback ticks.
+- Fresh publication allocation refuses non-video targets before storage allocation; replay/tombstones retain their existing behavior. Corrected guest endpoint documentation.
+- Environment-specific cutover/backup records were moved to private operational storage outside this feature PR.
+
+2026-10-04 PR correction verification
+- Final source passed 804 API tests (3 skipped), 668 frontend tests, standalone TypeScript, lint (existing hook warnings) and the production Next.js build with one worker. Independent follow-up review found no remaining important issues.
+- Generated 1,000-cue browser fixture verified page navigation and an exact repeated-cue anchor on a later page. Before/after screenshots are docs/images/rehearsal-cues-before.jpg and rehearsal-cues-after.jpg. This is isolated browser evidence, not hosted processing acceptance.
