@@ -42,6 +42,11 @@ class ShareLink(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    @property
+    def has_password(self) -> bool:
+        """Truthful response flag for ORM share inventories; no secret is exposed."""
+        return bool(self.password_hash)
+
     __table_args__ = (
         CheckConstraint(
             "(asset_id IS NOT NULL AND folder_id IS NULL) "

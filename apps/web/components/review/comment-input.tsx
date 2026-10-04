@@ -24,6 +24,7 @@ import { useReviewStore } from "@/stores/review-store";
 import { useReview } from "./review-provider";
 import { useDrawing } from "@/hooks/use-drawing";
 import { api } from "@/lib/api";
+import { formatClipTime } from "@/lib/rehearsal-timing";
 import { resolveSubmitTimecode } from "@/lib/resolve-submit-timecode";
 import type { User } from "@/types";
 
@@ -204,6 +205,10 @@ export function CommentInput({
   className,
 }: CommentInputProps) {
   const {
+    rehearsalTimeline,
+    pendingCueAnchor,
+    setPendingCueAnchor,
+    currentVersion,
     isDrawingMode,
     drawingTool,
     drawingColor,
@@ -218,6 +223,8 @@ export function CommentInput({
     setActiveAnnotation,
   } = useReviewStore();
   const playheadTime = playheadTimeOverride ?? storePlayheadTime;
+  const rehearsalRate = playheadTimeOverride === undefined && rehearsalTimeline?.asset_id === assetId && rehearsalTimeline?.version_id === currentVersion?.id ? rehearsalTimeline.response.metadata.video_rate : null;
+  const cueAnchor = !replyToId && playheadTimeOverride === undefined && pendingCueAnchor?.asset_id === assetId && pendingCueAnchor?.version_id === currentVersion?.id ? pendingCueAnchor : null;
 
   // Compare mode drives drawing per-pane. When `annotationActive` is provided it
   // replaces the global `isDrawingMode` for every drawing-UI decision here, so
@@ -279,13 +286,13 @@ export function CommentInput({
   function displayTime(seconds: number): string {
     switch (timeFormat) {
       case "frames":
-        return formatFrames(seconds);
+        return formatFrames(seconds, rehearsalRate ? Number(rehearsalRate.numerator)/Number(rehearsalRate.denominator) : 24);
       case "standard":
         return formatTime(seconds);
       case "timecode":
-        return formatTimecode(seconds);
+        return rehearsalRate ? formatClipTime(seconds, rehearsalRate) : formatTimecode(seconds);
       default:
-        return formatTimecode(seconds);
+        return rehearsalRate ? formatClipTime(seconds, rehearsalRate) : formatTimecode(seconds);
     }
   }
   const hasAnnotation =
@@ -440,6 +447,10 @@ export function CommentInput({
         className,
       )}
     >
+      {cueAnchor && <div className="flex items-center justify-between gap-2 px-4 py-2 text-xs text-accent bg-accent/5">
+        <span>Commenting on {cueAnchor.label} · frame {cueAnchor.clip_frame}</span>
+        <button type="button" aria-label="Clear lighting cue anchor" onClick={()=>setPendingCueAnchor(null)}><X className="h-3.5 w-3.5" /></button>
+      </div>}
       {/* Reply indicator */}
       {replyToId && (
         <div className="flex items-center justify-between px-4 py-2 bg-accent/5 border-b border-accent/10 text-xs text-accent">
@@ -576,7 +587,7 @@ export function CommentInput({
                       ? "text-amber-400 bg-amber-400/10"
                       : "text-text-tertiary hover:bg-bg-tertiary hover:text-text-secondary",
                   )}
-                  onClick={() => setTimecodeAttached((p) => !p)}
+                  onClick={() => {setTimecodeAttached((p) => !p);setPendingCueAnchor(null)}}
                   title={
                     timecodeAttached ? "Detach timecode" : "Attach timecode"
                   }
@@ -586,7 +597,7 @@ export function CommentInput({
               )}
 
               {/* Draw annotation — hidden for audio */}
-              {canAnnotate && (
+              {canAnnotate && !cueAnchor && (
                 <button
                   className={cn(
                     "h-7 w-7 flex items-center justify-center rounded-md transition-colors",

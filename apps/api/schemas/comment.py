@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
+from .rehearsal import Count, Identifier
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -13,6 +14,9 @@ class CommentCreate(BaseModel):
     parent_id: Optional[uuid.UUID] = None
     timecode_start: Optional[float] = None
     timecode_end: Optional[float] = None
+    clip_frame: Optional[Count] = None
+    cue_occurrence_id: Optional[Identifier] = None
+    rehearsal_metadata_hash: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     body: str
     visibility: Optional[str] = "public"  # "public" or "internal"
     annotation: Optional[AnnotationData] = None
@@ -24,6 +28,9 @@ class GuestCommentCreate(BaseModel):
     parent_id: Optional[uuid.UUID] = None
     timecode_start: Optional[float] = None
     timecode_end: Optional[float] = None
+    clip_frame: Optional[Count] = None
+    cue_occurrence_id: Optional[Identifier] = None
+    rehearsal_metadata_hash: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     body: str
     annotation: Optional[AnnotationData] = None
     guest_email: Optional[str] = None  # Not needed if user is logged in
@@ -109,6 +116,14 @@ class CommentResponse(BaseModel):
     guest_author_id: Optional[uuid.UUID]
     timecode_start: Optional[float]
     timecode_end: Optional[float]
+    clip_frame: Optional[Count] = None
+    cue_occurrence_id: Optional[Identifier] = None
+    rehearsal_metadata_hash: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    @field_validator("clip_frame", mode="before")
+    @classmethod
+    def frame_from_database(cls, value):
+        return str(value) if isinstance(value, int) and not isinstance(value, bool) else value
+
     body: str
     resolved: bool
     visibility: str = "public"

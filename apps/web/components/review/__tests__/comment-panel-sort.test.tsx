@@ -102,3 +102,26 @@ describe('CommentPanel sort modes', () => {
     ])
   })
 })
+
+
+it('shows matching lighting cue context and seeks by its clip frame', () => {
+  const response={metadata_hash:'a'.repeat(64),timing_verified:false,metadata:{frame_count:'200',video_rate:{numerator:'50',denominator:'1'},timecode_rate:{numerator:'25',denominator:'1'},clock_spans:[],cues:[{id:'cue-second',clip_frame:'130',clock_span_id:'run',sequence:'1',cue:'12.5',source:'recorded' as const}]}};
+  useReviewStore.getState().setRehearsalTimeline({asset_id:'a1',version_id:'v1',response});
+  const note=makeComment({id:'cue-note',body:'Cue note',timecode_start:2.6,created_at:'2026-01-01T10:00:00Z',clip_frame:'130',cue_occurrence_id:'cue-second',rehearsal_metadata_hash:'a'.repeat(64)});
+  render(<CommentPanel comments={[note]} onResolve={noop} onDelete={noop} onAddReaction={noop} onRemoveReaction={noop} onReply={()=>{}}/>);
+  fireEvent.click(screen.getByText('Seq 1 · Cue 12.5 · f130'));
+  expect(useReviewStore.getState().seekTarget?.time).toBe(2.6);
+});
+
+
+it.each([
+  {asset_id:'other',version_id:'v1',metadata_hash:'a'.repeat(64)},
+  {asset_id:'a1',version_id:'other',metadata_hash:'a'.repeat(64)},
+  {asset_id:'a1',version_id:'v1',metadata_hash:'b'.repeat(64)},
+])('does not label a comment with another metadata context: %j', context => {
+  const response={metadata_hash:context.metadata_hash,timing_verified:false,metadata:{frame_count:'200',video_rate:{numerator:'50',denominator:'1'},timecode_rate:{numerator:'25',denominator:'1'},clock_spans:[],cues:[{id:'cue-second',clip_frame:'130',clock_span_id:'run',sequence:'1',cue:'12.5',source:'recorded' as const}]}};
+  useReviewStore.getState().setRehearsalTimeline({asset_id:context.asset_id,version_id:context.version_id,response});
+  const note=makeComment({id:'cue-note',body:'Cue note',timecode_start:2.6,created_at:'2026-01-01T10:00:00Z',clip_frame:'130',cue_occurrence_id:'cue-second',rehearsal_metadata_hash:'a'.repeat(64)});
+  render(<CommentPanel comments={[note]} onResolve={noop} onDelete={noop} onAddReaction={noop} onRemoveReaction={noop} onReply={()=>{}}/>);
+  expect(screen.queryByText('Seq 1 · Cue 12.5 · f130')).toBeNull();
+});

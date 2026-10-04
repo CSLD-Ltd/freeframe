@@ -202,6 +202,9 @@ export interface Comment {
   guest_author_id: string | null;
   timecode_start: number | null;
   timecode_end: number | null;
+  clip_frame?: string | null;
+  cue_occurrence_id?: string | null;
+  rehearsal_metadata_hash?: string | null;
   body: string;
   resolved: boolean;
   visibility: string;

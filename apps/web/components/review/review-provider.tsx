@@ -21,6 +21,9 @@ export interface CreateCommentPayload {
   parent_id?: string;
   timecode_start?: number;
   timecode_end?: number;
+  clip_frame?: string;
+  cue_occurrence_id?: string;
+  rehearsal_metadata_hash?: string;
   annotation?: { drawing_data: Record<string, unknown> };
 }
 
@@ -305,6 +308,16 @@ export function ReviewProvider({
 
   const addComment = useCallback(
     async (payload: CreateCommentPayload): Promise<Comment> => {
+      const anchor = useReviewStore.getState().pendingCueAnchor;
+      const versionId = payload.version_id ?? useReviewStore.getState().currentVersion?.id;
+      if (anchor && !payload.parent_id && payload.annotation && anchor.asset_id === assetId && anchor.version_id === versionId) {
+        throw new Error('Finish or discard the drawing before selecting a lighting cue.');
+      }
+      if (anchor && !payload.parent_id && !payload.annotation && anchor.asset_id === assetId && anchor.version_id === versionId) {
+        payload = {...payload, version_id: versionId, clip_frame: anchor.clip_frame,
+          cue_occurrence_id: anchor.cue_occurrence_id, rehearsal_metadata_hash: anchor.rehearsal_metadata_hash,
+          timecode_start: anchor.seconds};
+      }
       let comment: Comment;
       if (shareToken) {
         const API_URL =
@@ -342,9 +355,10 @@ export function ReviewProvider({
       if (mountedRef.current) {
         setComments((prev) => [...prev, comment]);
       }
+      if (useReviewStore.getState().pendingCueAnchor === anchor) useReviewStore.getState().setPendingCueAnchor(null);
       return comment;
     },
-    [assetId],
+    [assetId, shareToken, shareSessionParam],
   );
 
   const resolveComment = useCallback(

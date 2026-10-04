@@ -41,6 +41,13 @@ def initiate_upload(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    result = allocate_upload(body, db, current_user)
+    db.commit()
+    return result
+
+
+def allocate_upload(body: InitiateUploadRequest, db: Session, current_user: User):
+    """Allocate within the caller's transaction; the caller owns commit."""
     # Validate mime type
     if body.mime_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {body.mime_type}")
@@ -126,7 +133,6 @@ def initiate_upload(
         s3_key_raw=s3_key,
     )
     db.add(media_file)
-    db.commit()
 
     return InitiateUploadResponse(
         upload_id=upload_id,

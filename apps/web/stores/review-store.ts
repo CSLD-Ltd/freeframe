@@ -1,10 +1,15 @@
 import { create } from 'zustand'
 import type { Asset, AssetVersion } from '@/types'
+import type { CueAnchor, RehearsalResponse } from '@/lib/rehearsal-timing'
 
 type DrawingTool = 'pen' | 'rectangle' | 'arrow' | 'line'
 export type TimeFormat = 'standard' | 'timecode' | 'frames'
 
 interface ReviewState {
+  rehearsalTimeline: {asset_id:string;version_id:string;response:RehearsalResponse} | null
+  setRehearsalTimeline: (value: ReviewState["rehearsalTimeline"]) => void
+  pendingCueAnchor: CueAnchor | null
+  setPendingCueAnchor: (anchor: CueAnchor | null) => void
   currentAsset: Asset | null
   currentVersion: AssetVersion | null
   playheadTime: number
@@ -34,6 +39,8 @@ interface ReviewState {
 }
 
 const initialState = {
+  rehearsalTimeline: null,
+  pendingCueAnchor: null,
   currentAsset: null,
   currentVersion: null,
   playheadTime: 0,
@@ -50,15 +57,17 @@ const initialState = {
 
 export const useReviewStore = create<ReviewState>()((set) => ({
   ...initialState,
+  setRehearsalTimeline: (value) => set({rehearsalTimeline:value}),
+  setPendingCueAnchor: (anchor) => set({pendingCueAnchor: anchor}),
 
   setCurrentAsset: (asset: Asset) => {
-    set({ currentAsset: asset, playheadTime: 0, seekTarget: null })
+    set({ currentAsset: asset, playheadTime: 0, seekTarget: null, pendingCueAnchor: null, rehearsalTimeline: null })
   },
 
   setCurrentVersion: (version: AssetVersion) => {
     set((state) =>
       state.currentVersion != null && state.currentVersion.id !== version.id
-        ? { currentVersion: version, activeAnnotation: null, focusedCommentId: null }
+        ? { currentVersion: version, activeAnnotation: null, focusedCommentId: null, pendingCueAnchor: null, rehearsalTimeline: null }
         : { currentVersion: version },
     )
   },
