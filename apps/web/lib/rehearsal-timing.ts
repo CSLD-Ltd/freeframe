@@ -26,14 +26,16 @@ export function formatSourceLabel(frame:string,rate:ExactRate):string {
 export function frameSeconds(frame:string,rate:ExactRate):number {return Number(frame)*Number(rate.denominator)/Number(rate.numerator)}
 
 export function formatClipTime(seconds:number,rate:ExactRate):string {
- const frames=BigInt(Math.max(0,Math.floor(seconds*Number(rate.numerator)/Number(rate.denominator)+1e-7)));
+ const frames=BigInt(clipFrameAt(seconds,rate));
  const nominal=(BigInt(rate.numerator)+BigInt(rate.denominator)-BigInt(1))/BigInt(rate.denominator);
  return formatSourceLabel(frames.toString(),{numerator:nominal.toString(),denominator:'1'});
 }
 
 /** One clip-frame projection shared by transport, source strip and comment labels. */
 export function clipFrameAt(seconds:number,rate:ExactRate):string {
- return Math.max(0,Math.floor(seconds*Number(rate.numerator)/Number(rate.denominator)+1e-7)).toString();
+ // Browser seeks may report a frame boundary one microsecond early. Tolerate
+ // only that timestamp precision; do not round to the nearest picture frame.
+ return Math.max(0,Math.floor((seconds+1e-6)*Number(rate.numerator)/Number(rate.denominator)+1e-7)).toString();
 }
 export function formatSourceTime(seconds:number,timeline:RehearsalTimeline):string {
  const label=sourceLabel(timeline,clipFrameAt(seconds,timeline.video_rate));

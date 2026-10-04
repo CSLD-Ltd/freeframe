@@ -25,6 +25,13 @@ describe('rehearsal source timing',()=>{
 })
 
 describe('shared review source clock',()=>{
+ it('absorbs a browser seek rounded down by one microsecond without rounding whole frames',()=>{
+  const rate={numerator:'25',denominator:'1'};
+  expect(clipFrameAt(8.039999,rate)).toBe('201');
+  expect(formatClipTime(8.039999,rate)).toBe('00:00:08:01');
+  expect(clipFrameAt(8.039998,rate)).toBe('200');
+  expect(clipFrameAt(8.02,rate)).toBe('200');
+ });
  it('uses the screenshot fixture mapping instead of clip elapsed time',()=>{
   const mapped={...timeline,video_rate:{numerator:'25',denominator:'1'},clock_spans:[{id:'run',clip_start:'104',clip_end:'176',source_start:'90102'}]}
   expect(clipFrameAt(4.44,mapped.video_rate)).toBe('111')
