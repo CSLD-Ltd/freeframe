@@ -15,7 +15,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { cn, formatTime, formatTimecode, formatFrames } from "@/lib/utils";
-import { formatClipTime, formatSourceTime } from "@/lib/rehearsal-timing";
+import { clipFrameAt, formatClipTime, formatSourceTime } from "@/lib/rehearsal-timing";
 import { renderedMediaBox } from "@/lib/media-frame";
 import { api } from "@/lib/api";
 import { useReviewStore, type TimeFormat } from "@/stores/review-store";
@@ -196,7 +196,7 @@ export function VideoPlayer({
   function displayTime(seconds: number): string {
     switch (timeFormat) {
       case "frames":
-        return formatFrames(seconds, rehearsalRate ? Number(rehearsalRate.numerator)/Number(rehearsalRate.denominator) : 24);
+        return rehearsalRate ? clipFrameAt(seconds, rehearsalRate) : formatFrames(seconds, 24);
       case "standard":
         return formatTime(seconds);
       case "timecode":

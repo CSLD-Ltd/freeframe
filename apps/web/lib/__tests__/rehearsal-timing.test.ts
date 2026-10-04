@@ -45,3 +45,20 @@ describe('shared review source clock',()=>{
   expect(formatSourceTime(4,timeline)).toBe('Unmapped')
  })
 })
+
+
+it('reuses an indexed span lookup for many comments on a maximum-sized timeline',()=>{
+ let reads=0
+ const large={...timeline,video_rate:{numerator:'25',denominator:'1'},frame_count:'30000',clock_spans:Array.from({length:10000},(_,i)=>({
+  id:String(i),get clip_start(){reads++;return String(i*3)},get clip_end(){reads++;return String(i*3+2)},source_start:(BigInt('9007199254740993')+BigInt(i)).toString(),
+ }))}
+ expect(sourceLabel(large,'29997')).toBe('9007199254750992')
+ reads=0
+ for(let i=9000;i<10000;i++) {
+  expect(sourceLabel(large,String(i*3+1))).toBe((BigInt('9007199254740994')+BigInt(i)).toString())
+  expect(sourceLabel(large,String(i*3+2))).toBeNull()
+ }
+ expect(reads).toBe(0)
+ // A different immutable metadata response must have its own index.
+ expect(sourceLabel({...large,clock_spans:[{id:'new',clip_start:'0',clip_end:'2',source_start:'123'}]},'0')).toBe('123')
+})

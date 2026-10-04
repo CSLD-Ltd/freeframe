@@ -57,3 +57,7 @@ Use a dedicated test database for real_db tests and run test migrations there; n
 2026-10-04 PR correction verification
 - Final source passed 804 API tests (3 skipped), 668 frontend tests, standalone TypeScript, lint (existing hook warnings) and the production Next.js build with one worker. Independent follow-up review found no remaining important issues.
 - Generated 1,000-cue browser fixture verified page navigation and an exact repeated-cue anchor on a later page. Before/after screenshots are docs/images/rehearsal-cues-before.jpg and rehearsal-cues-after.jpg. This is isolated browser evidence, not hosted processing acceptance.
+
+2026-10-04 PR #2 review corrections
+- Clearing rehearsal context on asset/version/metadata transitions restores ordinary timecode if Clip timecode was selected, preserving other display preferences and same-version selection.
+- Frames mode in player/composer now uses the same microsecond-tolerant exact-rate projection as source and clip timecodes. Source span lookup uses a WeakMap cache per immutable metadata object and binary search over pre-parsed bounds, avoiding repeated full scans for comment lists.

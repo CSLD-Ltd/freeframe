@@ -7,12 +7,33 @@ export interface RehearsalTimeline {
 }
 export interface RehearsalResponse {metadata_hash:string;metadata:RehearsalTimeline;timing_verified:boolean}
 export interface CueAnchor {asset_id:string;version_id:string;clip_frame:string;cue_occurrence_id:string;rehearsal_metadata_hash:string;label:string;seconds:number}
+type ClockSpan = RehearsalTimeline['clock_spans'][number];
+type IndexedClockSpan = {start:bigint;end:bigint;span:ClockSpan};
+// Metadata responses are immutable. Cache by object identity so a new response
+// gets its own index and unused timelines can be garbage-collected.
+const spanIndexes = new WeakMap<RehearsalTimeline, IndexedClockSpan[]>();
+function spanAt(timeline:RehearsalTimeline,frame:bigint):IndexedClockSpan|null {
+ let spans=spanIndexes.get(timeline);
+ if(!spans){
+  spans=timeline.clock_spans.map(span=>({start:BigInt(span.clip_start),end:BigInt(span.clip_end),span}));
+  spanIndexes.set(timeline,spans);
+ }
+ // Validated spans are ordered and nonoverlapping. Find the last start <= frame.
+ let low=0,high=spans.length;
+ while(low<high){
+  const middle=Math.floor((low+high)/2);
+  if(spans[middle].start<=frame)low=middle+1;else high=middle;
+ }
+ const candidate=spans[low-1];
+ return candidate&&frame<candidate.end?candidate:null;
+}
 export function sourceLabel(timeline:RehearsalTimeline,frame:string):string|null {
  const f=BigInt(frame)
- const span=timeline.clock_spans.find(s=>BigInt(s.clip_start)<=f&&f<BigInt(s.clip_end))
- if(!span)return null
+ const entry=spanAt(timeline,f)
+ if(!entry)return null
+ const {span,start}=entry;
  const phase=span.source_phase??{numerator:'0',denominator:'1'};
- const n=(f-BigInt(span.clip_start))*BigInt(timeline.timecode_rate.numerator)*BigInt(timeline.video_rate.denominator);
+ const n=(f-start)*BigInt(timeline.timecode_rate.numerator)*BigInt(timeline.video_rate.denominator);
  const d=BigInt(timeline.timecode_rate.denominator)*BigInt(timeline.video_rate.numerator);
  const offset=(n*BigInt(phase.denominator)+BigInt(phase.numerator)*d)/(d*BigInt(phase.denominator));
  return (BigInt(span.source_start)+offset).toString()

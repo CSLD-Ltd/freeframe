@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Restore ordinary timecode when leaving rehearsal media, index source-clock spans for large comment lists, and keep Frames mode aligned with source/clip timecodes at browser seek boundaries.
 - Rehearsal playback, source strip and comment timestamps share mapped source timecode; elapsed clip timecode is explicitly labelled and unmapped clock gaps remain visible.
 - Preserve exact cue anchors in authenticated comments and replies, bound large cue navigation, and refuse non-video rehearsal publication targets before allocation.
 

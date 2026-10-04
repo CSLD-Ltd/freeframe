@@ -230,3 +230,12 @@ describe('source timecode transport',()=>{
     vi.restoreAllMocks()
   })
 })
+
+
+it.each([{numerator:'25',denominator:'1'},{numerator:'50',denominator:'1'}])('uses the shared frame projection in transport Frames mode at %j', rate=>{
+  setRehearsal()
+  useReviewStore.setState({timeFormat:'frames',rehearsalTimeline:{asset_id:'a1',version_id:'v1',response:{...rehearsal,metadata:{...rehearsal.metadata,video_rate:rate}}}})
+  quality.time=201*Number(rate.denominator)/Number(rate.numerator)-0.000001
+  render(<VideoPlayer {...props}/>)
+  expect(screen.getByRole('button',{name:`201 / ${100*Number(rate.numerator)/Number(rate.denominator)}`})).toBeTruthy()
+})

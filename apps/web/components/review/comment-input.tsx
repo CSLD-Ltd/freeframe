@@ -24,7 +24,7 @@ import { useReviewStore } from "@/stores/review-store";
 import { useReview } from "./review-provider";
 import { useDrawing } from "@/hooks/use-drawing";
 import { api } from "@/lib/api";
-import { formatClipTime, formatSourceTime } from "@/lib/rehearsal-timing";
+import { clipFrameAt, formatClipTime, formatSourceTime } from "@/lib/rehearsal-timing";
 import { resolveSubmitTimecode } from "@/lib/resolve-submit-timecode";
 import type { User } from "@/types";
 
@@ -288,7 +288,7 @@ export function CommentInput({
   function displayTime(seconds: number): string {
     switch (timeFormat) {
       case "frames":
-        return formatFrames(seconds, rehearsalRate ? Number(rehearsalRate.numerator)/Number(rehearsalRate.denominator) : 24);
+        return rehearsalRate ? clipFrameAt(seconds, rehearsalRate) : formatFrames(seconds, 24);
       case "standard":
         return formatTime(seconds);
       case "timecode":

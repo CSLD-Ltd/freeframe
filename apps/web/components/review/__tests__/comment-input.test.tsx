@@ -240,3 +240,10 @@ describe('rehearsal composer source clock',()=>{
     expect(onSubmit.mock.calls[0][1]).toBe(4.44)
   })
 })
+
+
+it.each([{numerator:'25',denominator:'1'},{numerator:'50',denominator:'1'}])('uses the shared frame projection in composer Frames mode at %j', rate=>{
+  useReviewStore.setState({timeFormat:'frames',playheadTime:201*Number(rate.denominator)/Number(rate.numerator)-0.000001,currentVersion:{id:'v1',asset_id:'a1'} as any,rehearsalTimeline:{asset_id:'a1',version_id:'v1',response:{metadata_hash:'a'.repeat(64),timing_verified:false,metadata:{frame_count:'300',video_rate:rate,timecode_rate:{numerator:'25',denominator:'1'},clock_spans:[],cues:[]}}}})
+  render(<CommentInput assetId="a1" projectId="p1" assetType="video" onSubmit={vi.fn()}/>)
+  expect(screen.getByText('201')).toBeInTheDocument()
+})
