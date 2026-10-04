@@ -440,6 +440,7 @@ def test_gc_covers_all_inbound_fks_to_purged_tables():
         ("share_link_items", "asset_id"), ("asset_shares", "asset_id"), ("asset_metadata", "asset_id"),
         ("activity_logs", "asset_id"), ("notifications", "asset_id"), ("approvals", "asset_id"),
         # -> asset_versions.id
+        ("rehearsal_metadata", "version_id"), ("publication_allocations", "version_id"),
         ("media_files", "version_id"), ("carousel_items", "version_id"),
         ("comments", "version_id"), ("approvals", "version_id"),
         # -> media_files.id

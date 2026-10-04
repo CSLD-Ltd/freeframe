@@ -259,3 +259,42 @@ migrated database. They are created by the initial migration and were never drop
 have no ORM model and no route behind them. Ignore them.
 
 **ORM:** SQLAlchemy 2.0 with Alembic for migrations.
+
+
+## Rehearsal version metadata foundation
+
+`schemas/rehearsal.py` validates exact frame/rate and discontinuous source-clock
+declarations. `services/rehearsal_metadata.py` canonicalizes/hashes immutable
+payloads; `routers/rehearsal.py` enforces project permissions, uploader ownership,
+asset-version relation and a version row lock to serialize writes. A separate
+rehearsal_metadata row is keyed by version ID; retention removes it with its
+version, with a cascading FK as defense in depth. Ordinary uploads are unaffected.
+This source-only API does not yet certify uploaded bytes or processed frame maps.
+
+### Rehearsal publication allocation — 2026-10-03
+
+The publication service wraps the existing upload allocator inside one database
+transaction. A hash of uploader/project/producer/recording/take/export identity
+selects a PostgreSQL advisory transaction lock. The allocation receipt and
+version commit together, and an identical retry replays that receipt.
+`publication_allocations.version_id` becomes null on purge; the receipt remains
+as a tombstone to prevent old journals recreating deleted media. Current project
+permissions and live-version status are checked even for replay. A storage
+allocation followed by a failed database commit can leave an orphan multipart
+session for the existing storage sweeper; it cannot commit a duplicate asset.
+
+Rehearsal comments store a bounded clip-frame integer, occurrence identifier and
+immutable metadata hash alongside the existing seconds fields. The metadata
+service validates these together; legacy seconds are derived for existing
+navigation/export consumers. Share timeline reads and anchored writes use the
+existing share permissions and visible ready-version policy. The web cue lane
+keeps selections bound to asset/version, clears them on version changes, and
+never reports processed playback timing as verified from source declarations.
+
+### Share response protection status — 2026-10-04
+
+The existing ShareLink ORM model exposes a nonpersisted `has_password` property derived from `password_hash`, allowing existing ORM-backed response serialization to accurately report protection without disclosing the hash. No storage schema or password validation boundary changes. Native ReaperShow reconciliation relies on this status before reusing a client link.
+
+### Rehearsal review correction boundaries (2026-10-04)
+
+The project useComments hook and share ReviewProvider use one rehearsal-comment helper for cue/frame/hash attachment. Successful submission clears only the same consumed anchor; failures, replies and other versions retain unrelated drafts. Both authenticated reply routes use the parent’s version as anchor authority. The cue lane bounds rendering to a navigable 100-occurrence page and memoizes cue-derived elements separately from the changing source-clock readout. Fresh target validation occurs under the publication allocator’s existing transaction lock after receipt/tombstone reconciliation and before multipart allocation. Private deployment operations remain outside feature source.

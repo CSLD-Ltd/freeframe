@@ -191,3 +191,52 @@ def test_a_real_reply_is_still_rendered(real_db, monkeypatch):
 
     resp = comments_module._build_comment_response(parent, real_db)
     assert [r.body for r in resp.replies] == ["a genuine reply"]
+
+
+def test_reply_preserves_exact_anchor_on_parent_version(real_db, monkeypatch):
+    from apps.api.schemas.comment import CommentCreate
+    from apps.api.services.rehearsal_metadata import store
+    from apps.api.tests.test_rehearsal_metadata import manifest
+    import apps.api.routers.comments as comments_module
+    owner, [(asset, version), (_, other_version)] = _seed(real_db, monkeypatch)
+    parent = _comment(real_db, asset, version, owner)
+    record = store(real_db, version.id, manifest())
+    monkeypatch.setattr(comments_module.event_service, 'publish_sync', lambda *a: None)
+    response = comments_module.reply_to_comment(asset.id, parent.id, CommentCreate(
+        version_id=other_version.id, body='Cue reply', clip_frame='20', cue_occurrence_id='cue-1',
+        rehearsal_metadata_hash=record.metadata_hash, timecode_start=99,
+    ), db=real_db, current_user=owner)
+    assert response.version_id == version.id
+    assert response.clip_frame == '20'
+    assert response.cue_occurrence_id == 'cue-1'
+    assert response.rehearsal_metadata_hash == record.metadata_hash
+    assert response.timecode_start == .4
+
+
+@pytest.mark.parametrize('parent_anchor', [False, True])
+def test_parent_id_creation_uses_parent_version_for_exact_anchors(real_db, monkeypatch, parent_anchor):
+    from fastapi import HTTPException
+    from apps.api.models.asset import AssetVersion, ProcessingStatus
+    from apps.api.schemas.comment import CommentCreate
+    from apps.api.services.rehearsal_metadata import store
+    from apps.api.tests.test_rehearsal_metadata import manifest
+    import apps.api.routers.comments as comments_module
+    owner, [(asset, version), _] = _seed(real_db, monkeypatch)
+    other = AssetVersion(asset_id=asset.id, version_number=2, processing_status=ProcessingStatus.ready, created_by=owner.id)
+    real_db.add(other); real_db.flush()
+    parent = _comment(real_db, asset, version, owner)
+    first = store(real_db, version.id, manifest())
+    changed = manifest(); changed['export_id'] = 'another-export'
+    second = store(real_db, other.id, changed)
+    monkeypatch.setattr(comments_module.event_service, 'publish_sync', lambda *a: None)
+    body = CommentCreate(version_id=other.id, parent_id=parent.id, body='Anchored reply',
+        clip_frame='20',cue_occurrence_id='cue-1',rehearsal_metadata_hash=(first if parent_anchor else second).metadata_hash)
+    if not parent_anchor:
+        with pytest.raises(HTTPException) as exc:
+            comments_module.create_comment(asset.id, body, db=real_db, current_user=owner)
+        assert exc.value.status_code == 409
+    else:
+        response = comments_module.create_comment(asset.id, body, db=real_db, current_user=owner)
+        assert response.version_id == version.id
+        assert response.rehearsal_metadata_hash == first.metadata_hash
+        assert response.clip_frame == '20'

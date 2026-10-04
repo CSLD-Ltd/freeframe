@@ -189,3 +189,8 @@ Rules for agents:
 - **Security issues:** follow [`SECURITY.md`](SECURITY.md) — do not open a public issue.
 - **License:** contributions are MIT-licensed ([`LICENSE`](LICENSE)).
 ```
+
+
+## CSLD integration continuity
+
+Maintain root APPSTATE.md and API.md incrementally; docs/architecture.md is the canonical architecture document. Publishing additions use the existing upload/auth/share boundaries. Rehearsal payloads are immutable per version, and source timecode does not certify processed picture timing. Keep hosted configuration, credentials, local volumes and release/deployment infrastructure out of feature changes.

@@ -1,4 +1,5 @@
 "use client";
+import {prepareCueComment,clearSubmittedCue} from "@/lib/rehearsal-comment";
 
 import React, {
   createContext,
@@ -21,6 +22,9 @@ export interface CreateCommentPayload {
   parent_id?: string;
   timecode_start?: number;
   timecode_end?: number;
+  clip_frame?: string;
+  cue_occurrence_id?: string;
+  rehearsal_metadata_hash?: string;
   annotation?: { drawing_data: Record<string, unknown> };
 }
 
@@ -305,6 +309,9 @@ export function ReviewProvider({
 
   const addComment = useCallback(
     async (payload: CreateCommentPayload): Promise<Comment> => {
+      const versionId = payload.version_id ?? useReviewStore.getState().currentVersion?.id;
+      const prepared = prepareCueComment(payload, assetId, versionId);
+      payload = prepared.payload;
       let comment: Comment;
       if (shareToken) {
         const API_URL =
@@ -342,9 +349,10 @@ export function ReviewProvider({
       if (mountedRef.current) {
         setComments((prev) => [...prev, comment]);
       }
+      clearSubmittedCue(prepared.anchor);
       return comment;
     },
-    [assetId],
+    [assetId, shareToken, shareSessionParam],
   );
 
   const resolveComment = useCallback(

@@ -279,6 +279,7 @@ function ShareReviewInner({
         >
           {asset.asset_type === 'video' && versionReady && VideoPlayer ? (
             <VideoPlayer
+              allowRehearsalComments={canComment}
               assetId={asset.id}
               comments={comments}
               className="flex-1"

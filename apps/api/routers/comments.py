@@ -35,6 +35,7 @@ from ..schemas.comment import (
     ReactionResponse,
 )
 from ..services import s3_service
+from ..services.rehearsal_comments import validate_anchor
 from ..services import comment_export
 from ..services.permissions import (
     require_asset_access, can_access_asset, validate_share_link_with_session, validate_asset_in_share,
@@ -374,6 +375,7 @@ def create_comment(
     # inside a thread on an asset the author cannot open. The weaker failure is
     # the same bug pointed at a deleted parent: a 201 for a reply no read path
     # will ever return.
+    comment_version_id = body.version_id
     if body.parent_id is not None:
         parent = db.query(Comment).filter(
             Comment.id == body.parent_id,
@@ -382,16 +384,19 @@ def create_comment(
         ).first()
         if not parent:
             raise HTTPException(status_code=400, detail="parent_id does not belong to this asset")
+        comment_version_id = parent.version_id
 
+    anchor_fields = validate_anchor(db, body, comment_version_id)
     comment = Comment(
         asset_id=asset_id,
-        version_id=body.version_id,
+        version_id=comment_version_id,
         parent_id=body.parent_id,
         author_id=current_user.id,
-        timecode_start=body.timecode_start,
+        timecode_start=anchor_fields.pop("timecode_start", body.timecode_start),
         timecode_end=body.timecode_end,
         body=body.body,
         visibility=body.visibility or "public",
+        **anchor_fields,
     )
     db.add(comment)
     db.flush()
@@ -454,13 +459,15 @@ def reply_to_comment(
     # a reviewer cannot reproduce by retyping. `version_id` is still forced to
     # the parent's, since a reply belongs to the same version as what it
     # answers.
+    anchor_fields = validate_anchor(db, body, parent.version_id)
     reply = Comment(
+        **anchor_fields,
         asset_id=asset_id,
         version_id=parent.version_id,
         parent_id=comment_id,
         author_id=current_user.id,
         body=body.body,
-        timecode_start=body.timecode_start,
+        **({"timecode_start": body.timecode_start} if not anchor_fields else {}),
         timecode_end=body.timecode_end,
         visibility=body.visibility or "public",
     )
@@ -998,7 +1005,6 @@ def guest_comment(
     # Resolve version_id: use provided or get latest ready version
     version_id = body.version_id
     if not version_id:
-        from ..models.asset import AssetVersion, ProcessingStatus
         latest = db.query(AssetVersion).filter(
             AssetVersion.asset_id == asset.id,
             AssetVersion.deleted_at.is_(None),
@@ -1008,6 +1014,20 @@ def guest_comment(
             version_id = latest.id
         else:
             raise HTTPException(status_code=400, detail="No ready version found for this asset")
+
+    if any(v is not None for v in (body.clip_frame, body.cue_occurrence_id, body.rehearsal_metadata_hash)):
+        target_version = db.query(AssetVersion).filter(AssetVersion.id == version_id,
+            AssetVersion.asset_id == asset.id, AssetVersion.deleted_at.is_(None),
+            AssetVersion.processing_status == ProcessingStatus.ready).first()
+        if target_version is None:
+            raise HTTPException(status_code=404, detail="Version not available in this share")
+        if not link.show_versions:
+            latest = db.query(AssetVersion).filter(AssetVersion.asset_id == asset.id,
+                AssetVersion.deleted_at.is_(None), AssetVersion.processing_status == ProcessingStatus.ready
+                ).order_by(AssetVersion.version_number.desc()).first()
+            if latest is None or latest.id != version_id:
+                raise HTTPException(status_code=404, detail="Version not available in this share")
+    anchor_fields = validate_anchor(db, body, version_id)
 
     # Determine author: logged-in user or guest
     author_id = None
@@ -1031,9 +1051,10 @@ def guest_comment(
         parent_id=body.parent_id,
         author_id=author_id,
         guest_author_id=guest_author_id,
-        timecode_start=body.timecode_start,
+        timecode_start=anchor_fields.pop("timecode_start", body.timecode_start),
         timecode_end=body.timecode_end,
         body=body.body,
+        **anchor_fields,
     )
     db.add(comment)
     db.flush()

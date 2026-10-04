@@ -15,12 +15,14 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { cn, formatTime, formatTimecode, formatFrames } from "@/lib/utils";
+import { formatClipTime } from "@/lib/rehearsal-timing";
 import { renderedMediaBox } from "@/lib/media-frame";
 import { api } from "@/lib/api";
 import { useReviewStore, type TimeFormat } from "@/stores/review-store";
 import { useVideoPlayer } from "@/hooks/use-video-player";
 import { useMediaQuery, MEDIA_SM } from "@/hooks/use-media-query";
 import { useReview } from "./review-provider";
+import { RehearsalTimeline } from "./rehearsal-timeline";
 import { ProgressBar } from "./progress-bar";
 import type { Comment } from "@/types";
 
@@ -32,6 +34,7 @@ interface StreamUrlResponse {
 
 interface VideoPlayerProps {
   assetId: string;
+  allowRehearsalComments?: boolean;
   comments?: Comment[];
   overlay?: React.ReactNode;
   className?: string;
@@ -126,6 +129,7 @@ const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
 export function VideoPlayer({
   assetId,
+  allowRehearsalComments = true,
   comments = [],
   overlay,
   className,
@@ -135,7 +139,7 @@ export function VideoPlayer({
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [loop, setLoop] = useState(false);
 
-  const { isDrawingMode, timeFormat, setTimeFormat, setPlayheadTime, currentVersion } =
+  const { isDrawingMode, timeFormat, setTimeFormat, setPlayheadTime, currentVersion, rehearsalTimeline } =
     useReviewStore();
   const { registerPauseHandler } = useReview();
   const [timeFormatOpen, setTimeFormatOpen] = useState(false);
@@ -186,16 +190,17 @@ export function VideoPlayer({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [timeFormatOpen]);
 
+  const rehearsalRate = rehearsalTimeline?.asset_id === assetId && rehearsalTimeline?.version_id === currentVersion?.id ? rehearsalTimeline.response.metadata.video_rate : null;
   function displayTime(seconds: number): string {
     switch (timeFormat) {
       case "frames":
-        return formatFrames(seconds);
+        return formatFrames(seconds, rehearsalRate ? Number(rehearsalRate.numerator)/Number(rehearsalRate.denominator) : 24);
       case "standard":
         return formatTime(seconds);
       case "timecode":
-        return formatTimecode(seconds);
+        return rehearsalRate ? formatClipTime(seconds, rehearsalRate) : formatTimecode(seconds);
       default:
-        return formatTimecode(seconds);
+        return rehearsalRate ? formatClipTime(seconds, rehearsalRate) : formatTimecode(seconds);
     }
   }
 
@@ -455,6 +460,8 @@ export function VideoPlayer({
           onSeek={seek}
         />
       </div>
+
+      <RehearsalTimeline assetId={assetId} currentTime={currentTime} canComment={allowRehearsalComments} />
 
       {/* Bottom transport bar (matches audio player style) */}
       <div
