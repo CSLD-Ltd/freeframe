@@ -2,6 +2,8 @@
 
 ## Interfaces and authentication
 
+Rehearsal UI source timecode is a display projection of immutable clock spans. Comment `timecode_start`/`timecode_end` remain clip-relative seconds; exact `clip_frame`, metadata hash and cue occurrence anchors retain their existing contract. Source timecode must not be submitted as elapsed media seconds. An unmapped clock span is displayed as Unmapped, without extrapolation.
+
 FastAPI exposes JSON HTTP endpoints and OpenAPI at `/openapi.json`, with an interactive
 contract at http://localhost:8000/docs. Authenticated requests use
 `Authorization: Bearer <access_token>`; refresh tokens use `/auth/refresh`.

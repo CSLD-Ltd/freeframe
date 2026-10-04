@@ -298,3 +298,9 @@ The existing ShareLink ORM model exposes a nonpersisted `has_password` property 
 ### Rehearsal review correction boundaries (2026-10-04)
 
 The project useComments hook and share ReviewProvider use one rehearsal-comment helper for cue/frame/hash attachment. Successful submission clears only the same consumed anchor; failures, replies and other versions retain unrelated drafts. Both authenticated reply routes use the parent’s version as anchor authority. The cue lane bounds rendering to a navigable 100-occurrence page and memoizes cue-derived elements separately from the changing source-clock readout. Fresh target validation occurs under the publication allocator’s existing transaction lock after receipt/tombstone reconciliation and before multipart allocation. Private deployment operations remain outside feature source.
+
+### Shared rehearsal display clock
+
+The transport, source strip and composer project a shared clip playhead through the same exact-rate clock-span helper. Source timecode is the rehearsal default; explicitly selected Clip timecode remains elapsed media time. Saved comments use matching asset/version metadata and exact frame/hash anchors where present. Navigation and persistence remain clip-relative. Clock gaps display Unmapped; display agreement does not establish processed picture or physical latency verification.
+
+Clock-span indices are cached by immutable metadata object identity in a WeakMap. Validated, ordered, nonoverlapping clip intervals use a predecessor binary search with an exclusive end check, preserving discontinuities and exact BigInt source arithmetic. New metadata objects receive fresh indices; unused responses can be collected. Clearing rehearsal context normalizes the rehearsal-only Clip timecode selection to ordinary timecode. Frames mode uses the shared clip-frame projection.

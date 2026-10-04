@@ -95,3 +95,35 @@ describe('Review store', () => {
     expect(state.focusedCommentId).toBe('c1')
   })
 })
+
+
+describe('rehearsal time format lifecycle', () => {
+  beforeEach(() => useReviewStore.getState().reset())
+  const rehearsal = {asset_id:'a1',version_id:'v1',response:{metadata_hash:'a'.repeat(64),timing_verified:false,metadata:{frame_count:'300',video_rate:{numerator:'25',denominator:'1'},timecode_rate:{numerator:'25',denominator:'1'},clock_spans:[],cues:[]}}}
+  it.each(['asset', 'version', 'metadata'] as const)('normalizes clip timecode when %s clears rehearsal context', kind => {
+    const store=useReviewStore.getState()
+    store.setCurrentVersion({id:'v1',asset_id:'a1'} as any)
+    store.setRehearsalTimeline(rehearsal)
+    store.setTimeFormat('clip-timecode')
+    if(kind==='asset') store.setCurrentAsset({id:'ordinary',asset_type:'audio'} as any)
+    if(kind==='version') store.setCurrentVersion({id:'v2',asset_id:'a1'} as any)
+    if(kind==='metadata') store.setRehearsalTimeline(null)
+    expect(useReviewStore.getState().rehearsalTimeline).toBeNull()
+    expect(useReviewStore.getState().timeFormat).toBe('timecode')
+  })
+  it('retains clip selection on same-version reselection and metadata refresh',()=>{
+    const store=useReviewStore.getState()
+    const version={id:'v1',asset_id:'a1'} as any
+    store.setCurrentVersion(version)
+    store.setRehearsalTimeline(rehearsal)
+    store.setTimeFormat('clip-timecode')
+    store.setCurrentVersion(version)
+    store.setRehearsalTimeline({...rehearsal})
+    expect(useReviewStore.getState().timeFormat).toBe('clip-timecode')
+  })
+  it.each(['standard','frames','timecode'] as const)('preserves %s when clearing metadata',format=>{
+    useReviewStore.getState().setTimeFormat(format)
+    useReviewStore.getState().setRehearsalTimeline(null)
+    expect(useReviewStore.getState().timeFormat).toBe(format)
+  })
+})

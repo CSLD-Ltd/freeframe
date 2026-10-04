@@ -7,13 +7,14 @@ vi.mock('../review-provider', () => ({ useReview: () => ({ registerPauseHandler:
 const quality = vi.hoisted(() => ({
   levels: [] as { index: number; label: string; height: number; bitrate: number }[],
   current: -1,
+  time: 0,
   set: vi.fn(),
 }))
 
 vi.mock('@/hooks/use-video-player', () => ({
   useVideoPlayer: () => ({
     videoRef: { current: null }, hlsRef: { current: null },
-    isPlaying: false, currentTime: 0, duration: 100, buffered: 0,
+    isPlaying: false, currentTime: quality.time, duration: 100, buffered: 0,
     volume: 1, isMuted: false, playbackRate: 1,
     qualityLevels: quality.levels, currentQuality: quality.current, isLoading: false, isFullscreen: false, error: null,
     pause: () => {}, togglePlay: () => {}, seek: () => {}, setPlaybackRate: () => {},
@@ -22,6 +23,8 @@ vi.mock('@/hooks/use-video-player', () => ({
 }))
 
 import { VideoPlayer } from '../video-player'
+import { useReviewStore } from '@/stores/review-store'
+vi.mock('../rehearsal-timeline', () => ({ RehearsalTimeline: () => null }))
 
 /**
  * `use-media-query` caches each MediaQueryList at module scope, which is right
@@ -43,10 +46,13 @@ vi.stubGlobal('matchMedia', (query: string) => {
 })
 
 beforeEach(() => {
+  useReviewStore.getState().reset()
+  quality.time = 0
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   Element.prototype.scrollIntoView = vi.fn()
 })
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.clearAllMocks()
   quality.levels = []
   quality.current = -1
@@ -189,4 +195,47 @@ describe('the stage on a touch screen', () => {
     const stage = container.querySelector('video')?.parentElement
     expect(stage?.className.split(/\s+/)).toContain('touch-manipulation')
   })
+})
+
+const rehearsal = { metadata_hash: 'a'.repeat(64), timing_verified: false, metadata: {
+  frame_count: '300', video_rate: {numerator:'25',denominator:'1'}, timecode_rate: {numerator:'25',denominator:'1'},
+  clock_spans:[{id:'run',clip_start:'104',clip_end:'176',source_start:'90102'}],cues:[],
+}}
+function setRehearsal() {
+  useReviewStore.setState({currentVersion:{id:'v1',asset_id:'a1'} as any, rehearsalTimeline:{asset_id:'a1',version_id:'v1',response:rehearsal}})
+}
+describe('source timecode transport',()=>{
+  it('shows the same source timecode as the rehearsal mapping by default',()=>{
+    setRehearsal(); quality.time=4.44
+    render(<VideoPlayer {...props}/>)
+    expect(screen.getByText('01:00:04:09')).toBeTruthy()
+    expect(screen.queryByText('00:00:04:11')).toBeNull()
+  })
+  it('labels an explicit clip clock separately and keeps source mode unmapped in gaps',()=>{
+    setRehearsal();quality.time=4
+    render(<VideoPlayer {...props}/>)
+    expect(screen.getByText('Unmapped')).toBeTruthy()
+    fireEvent.click(screen.getByText('Unmapped'))
+    fireEvent.click(screen.getByText('Clip timecode'))
+    expect(screen.getByText('Clip TC')).toBeTruthy()
+    expect(screen.getByText('00:00:04:00')).toBeTruthy()
+  })
+  it('updates the comment playhead on every seek, even within the previous 100ms throttle',()=>{
+    vi.spyOn(Date,'now').mockReturnValue(1000)
+    quality.time=4.44
+    const view=render(<VideoPlayer {...props}/>)
+    quality.time=5.64
+    view.rerender(<VideoPlayer {...props}/>)
+    expect(useReviewStore.getState().playheadTime).toBe(5.64)
+    vi.restoreAllMocks()
+  })
+})
+
+
+it.each([{numerator:'25',denominator:'1'},{numerator:'50',denominator:'1'}])('uses the shared frame projection in transport Frames mode at %j', rate=>{
+  setRehearsal()
+  useReviewStore.setState({timeFormat:'frames',rehearsalTimeline:{asset_id:'a1',version_id:'v1',response:{...rehearsal,metadata:{...rehearsal.metadata,video_rate:rate}}}})
+  quality.time=201*Number(rate.denominator)/Number(rate.numerator)-0.000001
+  render(<VideoPlayer {...props}/>)
+  expect(screen.getByRole('button',{name:`201 / ${100*Number(rate.numerator)/Number(rate.denominator)}`})).toBeTruthy()
 })

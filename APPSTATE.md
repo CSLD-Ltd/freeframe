@@ -20,9 +20,14 @@ Upload/project review and ordinary share links retain existing behavior. ReaperS
 - Source declarations do not verify original media SHA or processed frame cadence. UI reports playback timing unverified; no processed-frame accuracy claim is established.
 - Schema 1 supports 24/25/30 non-drop source clocks; fractional/drop formats and physical latency measurements are deferred.
 - Existing share creation has no atomic idempotency key or permanent version pin. Native publisher reconciles equivalent links and refuses assets with additional versions.
-- Hosted cutover, actual native upload/storage/worker/guest acceptance and real production footage remain pending. Additive migrations were verified on an isolated database.
+- Historical checkpoint (superseded by the hosting acceptance below): hosted cutover, actual native upload/storage/worker/guest acceptance and real production footage were pending. Additive migrations were verified on an isolated database.
 
 ## Recent changes
+
+2026-10-04
+- The merged publishing integration is hosted at review.csld.co.uk. A generated 300-frame/25 fps native upload completed processing and guest review, repeated cue comments persisted, automatic share policy disabled downloads, and retry reused its existing publication. Real production footage and physical timing calibration remain pending. Private deployment/rollback records stay outside feature source.
+- Rehearsal transport and comment composer default to the same source clock as the source strip. The transport offers an explicitly labelled Clip timecode mode; mapped saved comments show source timecode while navigation and API timestamps remain clip-relative. Playback polling samples the media clock once for both local and shared state.
+- Source clock gaps show Unmapped. This display correction does not verify processed picture timing or physical LTC/MA latency; timing_verified remains false.
 
 2026-10-04
 - Prepared isolated source integration branch from upstream 1ecede3, preserving the dirty hosting checkout. Added strict immutable rehearsal metadata, duplicate-safe allocation and tombstones, exact comment anchors, guest metadata authorization and source/cue review UI.
@@ -52,3 +57,7 @@ Use a dedicated test database for real_db tests and run test migrations there; n
 2026-10-04 PR correction verification
 - Final source passed 804 API tests (3 skipped), 668 frontend tests, standalone TypeScript, lint (existing hook warnings) and the production Next.js build with one worker. Independent follow-up review found no remaining important issues.
 - Generated 1,000-cue browser fixture verified page navigation and an exact repeated-cue anchor on a later page. Before/after screenshots are docs/images/rehearsal-cues-before.jpg and rehearsal-cues-after.jpg. This is isolated browser evidence, not hosted processing acceptance.
+
+2026-10-04 PR #2 review corrections
+- Clearing rehearsal context on asset/version/metadata transitions restores ordinary timecode if Clip timecode was selected, preserving other display preferences and same-version selection.
+- Frames mode in player/composer now uses the same microsecond-tolerant exact-rate projection as source and clip timecodes. Source span lookup uses a WeakMap cache per immutable metadata object and binary search over pre-parsed bounds, avoiding repeated full scans for comment lists.

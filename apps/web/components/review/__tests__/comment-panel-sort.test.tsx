@@ -113,6 +113,15 @@ it('shows matching lighting cue context and seeks by its clip frame', () => {
   expect(useReviewStore.getState().seekTarget?.time).toBe(2.6);
 });
 
+it('shows source timecode for a saved rehearsal frame while seeking in clip seconds', () => {
+  const response={metadata_hash:'a'.repeat(64),timing_verified:false,metadata:{frame_count:'300',video_rate:{numerator:'25',denominator:'1'},timecode_rate:{numerator:'25',denominator:'1'},clock_spans:[{id:'run',clip_start:'104',clip_end:'176',source_start:'90102'}],cues:[]}};
+  useReviewStore.getState().setRehearsalTimeline({asset_id:'a1',version_id:'v1',response});
+  const note=makeComment({id:'source-note',body:'Source note',timecode_start:4.44,created_at:'2026-01-01T10:00:00Z',clip_frame:'111',rehearsal_metadata_hash:'a'.repeat(64)});
+  render(<CommentPanel comments={[note]} onResolve={noop} onDelete={noop} onAddReaction={noop} onRemoveReaction={noop} onReply={()=>{}}/>);
+  fireEvent.click(screen.getByText('Source TC 01:00:04:09'));
+  expect(useReviewStore.getState().seekTarget?.time).toBe(4.44);
+});
+
 
 it.each([
   {asset_id:'other',version_id:'v1',metadata_hash:'a'.repeat(64)},
